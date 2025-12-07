@@ -28,7 +28,7 @@ jobs:
     steps:
       # Paso 1: Descargar el código
       - name: 📥 Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       # Paso 2: Instalar Rust
       - name: 🦀 Install Rust toolchain
@@ -38,9 +38,7 @@ jobs:
 
       # Paso 3: Ejecutar cargo-audit
       - name: 🔍 Run cargo-audit
-        uses: rustsec/audit-check-action@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions-rust-lang/audit@v1
 
   # Job 2: Cargo Geiger (Detectar unsafe code)
   geiger:
@@ -49,7 +47,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: 🦀 Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -69,7 +67,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: 🦀 Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -94,26 +92,26 @@ jobs:
 
     steps:
       - name: 📥 Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: 🦀 Install Rust
         uses: dtolnay/rust-toolchain@stable
 
       # Cache de dependencias para acelerar
       - name: ⚡ Cache cargo registry
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.cargo/registry
           key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
 
       - name: ⚡ Cache cargo index
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.cargo/git
           key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
 
       - name: ⚡ Cache cargo build
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: target
           key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
