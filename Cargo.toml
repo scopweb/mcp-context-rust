@@ -15,20 +15,20 @@ publish = false  # Not published to crates.io (experimental project)
 
 [dependencies]
 # Async runtime
-tokio = { version = "1.35", features = ["full"] }
+tokio = { version = "1.49", features = ["full"] }
 async-trait = "0.1"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-toml = "0.8"
+toml = "0.9"
 
 # Code parsing
 tree-sitter = "0.20"
 tree-sitter-c-sharp = "0.20"
 
 # XML parsing (for project files)
-quick-xml = { version = "0.31", features = ["serialize"] }
+quick-xml = { version = "0.39", features = ["serialize"] }
 
 # File system operations
 walkdir = "2.4"
@@ -37,7 +37,7 @@ ignore = "0.4"
 
 # Error handling
 anyhow = "1.0"
-thiserror = "1.0"
+thiserror = "2.0"
 
 # Logging
 tracing = "0.1"
@@ -51,9 +51,9 @@ jsonrpc-derive = "18.0"
 regex = "1.10"
 sha2 = "0.10"
 chrono = { version = "0.4", features = ["serde"] }
-uuid = { version = "1.6", features = ["v4", "serde"] }
-dirs = "5.0"
+uuid = { version = "1.19", features = ["v4", "serde"] }
+dirs = "6.0"
 
 [dev-dependencies]
 tokio-test = "0.4"
-tempfile = "3.8"
+tempfile = "3.24"

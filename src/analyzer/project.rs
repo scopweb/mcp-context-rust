@@ -92,7 +92,7 @@ impl ProjectAnalyzer {
         let content = fs::read_to_string(path).context("Failed to read .csproj file")?;
 
         let mut reader = Reader::from_str(&content);
-        reader.trim_text(true);
+        reader.config_mut().trim_text(true);
 
         let project_name = path
             .file_stem()
@@ -140,7 +140,7 @@ impl ProjectAnalyzer {
                     }
                 }
                 Ok(Event::Text(e)) => {
-                    let text = e.unescape()?.to_string();
+                    let text = String::from_utf8_lossy(e.as_ref()).into_owned();
 
                     // Capture TargetFramework value
                     if current_element == "TargetFramework" {
