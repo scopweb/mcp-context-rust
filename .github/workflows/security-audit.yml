@@ -1,152 +1,168 @@
-name: 🔒 Security Audit
+name: "\U0001F512 Security Audit"
 
-# Cuándo ejecutar este workflow
 on:
-  # En cada push a main o develop
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
 
-  # En cada pull request a main
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
-  # Diariamente a las 2 AM UTC (detectar nuevas vulnerabilidades)
+  # Weekly scan on Monday at 2 AM UTC (reduces wasted CI minutes vs daily)
   schedule:
-    - cron: '0 2 * * *'
+    - cron: '0 2 * * 1'
 
-# Variables de entorno
+  # Manual trigger - prevents GitHub from auto-disabling the workflow
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
 env:
   RUST_BACKTRACE: 1
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Job 1: Cargo Audit (Detectar vulnerabilidades en dependencias)
+  # Job 1: Cargo Audit - scan dependencies for known vulnerabilities
   audit:
-    name: 🔒 Cargo Audit
+    name: "\U0001F512 Cargo Audit"
     runs-on: ubuntu-latest
-
     steps:
-      # Paso 1: Descargar el código
-      - name: 📥 Checkout code
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      # Paso 2: Instalar Rust
-      - name: 🦀 Install Rust toolchain
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run cargo-audit
+        uses: actions-rust-lang/audit@v1
+
+  # Job 2: Unsafe code analysis using cargo clippy
+  unsafe-check:
+    name: "\U0001F50D Unsafe Code Analysis"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check for unsafe code in project sources
+        run: |
+          echo "## Unsafe Code Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Check for unsafe blocks in project source code (not dependencies)
+          UNSAFE_COUNT=$(grep -r "unsafe" src/ --include="*.rs" -c 2>/dev/null || echo "0")
+          if [ "$UNSAFE_COUNT" = "0" ]; then
+            echo "No unsafe code found in project sources." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Found unsafe usage in source files:" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep -rn "unsafe" src/ --include="*.rs" >> $GITHUB_STEP_SUMMARY 2>/dev/null || true
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Run clippy with unsafe lint checks
+        run: cargo clippy -- -D warnings -W unsafe_code
+
+  # Job 3: Dependency verification
+  dependency-check:
+    name: "\U0001F4E6 Dependency Check"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify Cargo.lock is committed
+        run: |
+          if ! git ls-files Cargo.lock --error-unmatch > /dev/null 2>&1; then
+            echo "::error::Cargo.lock not found or not committed"
+            echo "Run: cargo update && git add Cargo.lock && git commit"
+            exit 1
+          fi
+
+      - name: Show dependency tree
+        run: |
+          echo "## Dependency Tree (depth 1)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cargo tree --depth 1 >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+  # Job 4: Build, lint, and test
+  build:
+    name: "\U0001F3D7\uFE0F Build & Test"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
 
-      # Paso 3: Ejecutar cargo-audit
-      - name: 🔍 Run cargo-audit
-        uses: actions-rust-lang/audit@v1
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
 
-  # Job 2: Cargo Geiger (Detectar unsafe code)
-  geiger:
-    name: 🔍 Unsafe Code Analysis
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: 📥 Checkout code
-        uses: actions/checkout@v4
-
-      - name: 🦀 Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      # cargo-geiger detecta todo el código unsafe en tus dependencias
-      - name: 🔎 Install cargo-geiger
-        run: cargo install cargo-geiger --locked
-
-      - name: 🔍 Run cargo-geiger
-        # Genera reporte pero no falla (informativo)
-        run: cargo geiger --output-format GitHubMarkdown >> $GITHUB_STEP_SUMMARY || true
-
-  # Job 3: Dependency Check (Verificar dependencias)
-  dependency-check:
-    name: 📦 Dependency Check
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: 📥 Checkout code
-        uses: actions/checkout@v4
-
-      - name: 🦀 Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      # Verificar que Cargo.lock está actualizado
-      - name: 📋 Check Cargo.lock is committed
-        run: |
-          if ! git ls-files Cargo.lock --error-unmatch; then
-            echo "⚠️ Cargo.lock not found or not committed"
-            echo "Please run: cargo update && git add Cargo.lock && git commit"
-            exit 1
-          fi
-
-      # Ver árbol de dependencias
-      - name: 🌳 Show dependency tree
-        run: cargo tree --depth 1
-
-  # Job 4: Build & Test (Asegurar que compila sin errores)
-  build:
-    name: 🏗️ Build & Test
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: 📥 Checkout code
-        uses: actions/checkout@v4
-
-      - name: 🦀 Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      # Cache de dependencias para acelerar
-      - name: ⚡ Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: ⚡ Cache cargo index
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: ⚡ Cache cargo build
-        uses: actions/cache@v4
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-
-      # Verificar que formatea correctamente
-      - name: 🎨 Check code formatting
+      - name: Check code formatting
         run: cargo fmt -- --check
 
-      # Ejecutar clippy (linter)
-      - name: 📝 Run clippy
+      - name: Run clippy
         run: cargo clippy -- -D warnings
 
-      # Build
-      - name: 🔨 Build
+      - name: Build
         run: cargo build --verbose
 
-      # Tests
-      - name: ✅ Run tests
+      - name: Run tests
         run: cargo test --verbose
 
-  # Resumen
+  # Summary job - reports actual results
   summary:
-    name: 📊 Summary
+    name: "\U0001F4CA Summary"
     runs-on: ubuntu-latest
-    needs: [audit, geiger, dependency-check, build]
+    needs: [audit, unsafe-check, dependency-check, build]
     if: always()
-
     steps:
-      - name: 📊 Print summary
+      - name: Evaluate results
         run: |
-          echo "🔒 Security Audit Summary"
-          echo "========================"
-          echo "✅ Cargo Audit: Checked for known vulnerabilities"
-          echo "🔍 Unsafe Code: Analyzed for unsafe usage"
-          echo "📦 Dependencies: Verified"
-          echo "🏗️ Build & Tests: Passed"
-          echo ""
-          echo "Your code is secure! 🎉"
+          echo "## Security Audit Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.audit.result }}" = "success" ]; then
+            echo "- Cargo Audit: **passed** (no known vulnerabilities)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- Cargo Audit: **${{ needs.audit.result }}**" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ needs.unsafe-check.result }}" = "success" ]; then
+            echo "- Unsafe Code Analysis: **passed**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- Unsafe Code Analysis: **${{ needs.unsafe-check.result }}**" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ needs.dependency-check.result }}" = "success" ]; then
+            echo "- Dependency Check: **passed**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- Dependency Check: **${{ needs.dependency-check.result }}**" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ needs.build.result }}" = "success" ]; then
+            echo "- Build & Tests: **passed**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- Build & Tests: **${{ needs.build.result }}**" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Fail if any required job failed
+          if [ "${{ needs.audit.result }}" = "failure" ] || \
+             [ "${{ needs.build.result }}" = "failure" ]; then
+            echo ""
+            echo "::error::Security audit or build failed - check job details above"
+            exit 1
+          fi
