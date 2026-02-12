@@ -9,13 +9,13 @@ use std::path::PathBuf;
 /// Detected project type
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ProjectType {
-    DotNet,      // .csproj, .sln
-    Rust,        // Cargo.toml
-    Node,        // package.json
-    Python,      // pyproject.toml, setup.py, requirements.txt
-    Go,          // go.mod
-    Java,        // pom.xml, build.gradle
-    Php,         // composer.json
+    DotNet, // .csproj, .sln
+    Rust,   // Cargo.toml
+    Node,   // package.json
+    Python, // pyproject.toml, setup.py, requirements.txt
+    Go,     // go.mod
+    Java,   // pom.xml, build.gradle
+    Php,    // composer.json
     Unknown,
 }
 
@@ -85,9 +85,9 @@ pub enum SymbolKind {
     Enum,
     Struct,
     Module,
-    Trait,       // Rust
-    Impl,        // Rust
-    Component,   // React/Vue/Blazor
+    Trait,     // Rust
+    Impl,      // Rust
+    Component, // React/Vue/Blazor
     Other(String),
 }
 

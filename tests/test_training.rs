@@ -344,7 +344,9 @@ async fn test_add_and_save_pattern() -> Result<()> {
         updated_at: Utc::now(),
     };
 
-    manager.add_pattern(new_pattern).expect("Failed to add pattern");
+    manager
+        .add_pattern(new_pattern)
+        .expect("Failed to add pattern");
     assert_eq!(manager.get_all_patterns().len(), 1);
 
     // Save patterns

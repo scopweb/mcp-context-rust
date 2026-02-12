@@ -97,7 +97,10 @@ impl Server {
                     if json_body.is_empty() {
                         continue;
                     }
-                    eprintln!("Received request: {}", &json_body[..json_body.len().min(100)]);
+                    eprintln!(
+                        "Received request: {}",
+                        &json_body[..json_body.len().min(100)]
+                    );
 
                     match serde_json::from_str::<JsonRpcRequest>(&json_body) {
                         Ok(request) => {
@@ -113,7 +116,13 @@ impl Server {
                                 Ok(response_str) => {
                                     eprintln!("Sending response (framing={})", use_framing);
                                     // Send response matching client's framing style
-                                    if let Err(e) = Self::write_mcp_message(&mut stdout, &response_str, use_framing).await {
+                                    if let Err(e) = Self::write_mcp_message(
+                                        &mut stdout,
+                                        &response_str,
+                                        use_framing,
+                                    )
+                                    .await
+                                    {
                                         eprintln!("Error writing response: {}", e);
                                         break;
                                     }
@@ -140,7 +149,9 @@ impl Server {
                             };
 
                             if let Ok(error_str) = serde_json::to_string(&error_response) {
-                                let _ = Self::write_mcp_message(&mut stdout, &error_str, use_framing).await;
+                                let _ =
+                                    Self::write_mcp_message(&mut stdout, &error_str, use_framing)
+                                        .await;
                             }
                         }
                     }
@@ -163,9 +174,12 @@ impl Server {
     /// Reads a single MCP message from stdin.
     /// Auto-detects framing style (Content-Length headers vs newline-delimited JSON).
     /// Sets `use_framing` to true if Content-Length headers are detected.
-    async fn read_mcp_message(reader: &mut BufReader<tokio::io::Stdin>, use_framing: &mut bool) -> Result<Option<String>> {
+    async fn read_mcp_message(
+        reader: &mut BufReader<tokio::io::Stdin>,
+        use_framing: &mut bool,
+    ) -> Result<Option<String>> {
         let mut first_line = String::new();
-        
+
         // Read the first line to determine framing type
         let bytes_read = reader.read_line(&mut first_line).await?;
         if bytes_read == 0 {
@@ -173,18 +187,18 @@ impl Server {
         }
 
         let trimmed = first_line.trim();
-        
+
         // Check if this is Content-Length header (MCP standard framing)
         if trimmed.to_lowercase().starts_with("content-length:") {
             *use_framing = true;
-            
+
             // Parse Content-Length value
             let length_str = trimmed
                 .split(':')
                 .nth(1)
                 .ok_or_else(|| anyhow::anyhow!("Invalid Content-Length header"))?
                 .trim();
-            
+
             let content_length: usize = length_str
                 .parse()
                 .map_err(|_| anyhow::anyhow!("Invalid Content-Length value: {}", length_str))?;
@@ -193,7 +207,7 @@ impl Server {
             loop {
                 let mut header_line = String::new();
                 reader.read_line(&mut header_line).await?;
-                
+
                 // Empty line (just \r\n or \n) marks end of headers
                 if header_line.trim().is_empty() {
                     break;
@@ -203,7 +217,7 @@ impl Server {
             // Read exactly content_length bytes for the JSON body
             let mut body = vec![0u8; content_length];
             reader.read_exact(&mut body).await?;
-            
+
             let json_body = String::from_utf8(body)
                 .map_err(|e| anyhow::anyhow!("Invalid UTF-8 in message body: {}", e))?;
 
@@ -217,7 +231,10 @@ impl Server {
             Ok(Some(String::new()))
         } else {
             // Unknown format - try to parse as JSON anyway
-            eprintln!("Warning: Unexpected line format, attempting to parse: {}", &trimmed[..trimmed.len().min(50)]);
+            eprintln!(
+                "Warning: Unexpected line format, attempting to parse: {}",
+                &trimmed[..trimmed.len().min(50)]
+            );
             Ok(Some(trimmed.to_string()))
         }
     }
@@ -225,17 +242,21 @@ impl Server {
     /// Writes a JSON-RPC response.
     /// If use_framing is true, adds Content-Length header.
     /// Otherwise, sends newline-delimited JSON (for Claude Desktop compatibility).
-    async fn write_mcp_message(stdout: &mut tokio::io::Stdout, json: &str, use_framing: bool) -> Result<()> {
+    async fn write_mcp_message(
+        stdout: &mut tokio::io::Stdout,
+        json: &str,
+        use_framing: bool,
+    ) -> Result<()> {
         if use_framing {
             let content_length = json.len();
             let header = format!("Content-Length: {}\r\n\r\n", content_length);
             stdout.write_all(header.as_bytes()).await?;
         }
-        
+
         stdout.write_all(json.as_bytes()).await?;
         stdout.write_all(b"\n").await?;
         stdout.flush().await?;
-        
+
         Ok(())
     }
 

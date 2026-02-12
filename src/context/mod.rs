@@ -1,7 +1,7 @@
 use crate::training::{SearchCriteria, TrainingManager};
 use crate::types::{
-    AnalysisResult, CodePattern, DotNetProject, Project, ProjectType,
-    SeverityLevel, Statistics, Suggestion,
+    AnalysisResult, CodePattern, DotNetProject, Project, ProjectType, SeverityLevel, Statistics,
+    Suggestion,
 };
 use anyhow::Result;
 
@@ -43,7 +43,9 @@ impl ContextBuilder {
             total_classes: project.files.iter().map(|f| f.symbols.len()).sum(),
             total_methods: 0, // Would need symbol parsing
             total_lines: 0,
-            framework_version: project.metadata.target_framework
+            framework_version: project
+                .metadata
+                .target_framework
                 .clone()
                 .or(project.metadata.rust_edition.clone())
                 .or(project.metadata.node_version.clone())
@@ -64,9 +66,17 @@ impl ContextBuilder {
         match project.project_type {
             ProjectType::DotNet => {
                 // Check for Blazor, ASP.NET, etc.
-                if project.dependencies.iter().any(|d| d.name.contains("AspNetCore.Components")) {
+                if project
+                    .dependencies
+                    .iter()
+                    .any(|d| d.name.contains("AspNetCore.Components"))
+                {
                     "blazor-server".to_string()
-                } else if project.dependencies.iter().any(|d| d.name.contains("AspNetCore")) {
+                } else if project
+                    .dependencies
+                    .iter()
+                    .any(|d| d.name.contains("AspNetCore"))
+                {
                     "aspnet-core".to_string()
                 } else {
                     "dotnet".to_string()
@@ -110,16 +120,28 @@ impl ContextBuilder {
                 }
             }
             ProjectType::Go => {
-                if project.dependencies.iter().any(|d| d.name.contains("gin-gonic")) {
+                if project
+                    .dependencies
+                    .iter()
+                    .any(|d| d.name.contains("gin-gonic"))
+                {
                     "gin".to_string()
-                } else if project.dependencies.iter().any(|d| d.name.contains("fiber")) {
+                } else if project
+                    .dependencies
+                    .iter()
+                    .any(|d| d.name.contains("fiber"))
+                {
                     "fiber".to_string()
                 } else {
                     "go".to_string()
                 }
             }
             ProjectType::Java => {
-                if project.dependencies.iter().any(|d| d.name.contains("spring")) {
+                if project
+                    .dependencies
+                    .iter()
+                    .any(|d| d.name.contains("spring"))
+                {
                     "spring".to_string()
                 } else {
                     "java".to_string()
@@ -157,7 +179,11 @@ impl ContextBuilder {
         };
 
         let results = manager.search_patterns(&criteria);
-        Ok(results.into_iter().take(10).map(|(p, _)| p.clone()).collect())
+        Ok(results
+            .into_iter()
+            .take(10)
+            .map(|(p, _)| p.clone())
+            .collect())
     }
 
     /// Generate suggestions for generic project
@@ -168,19 +194,26 @@ impl ContextBuilder {
         match project.project_type {
             ProjectType::Node => {
                 // Check for security vulnerabilities indicators
-                if project.dependencies.iter().any(|d| d.name == "express" && d.version.starts_with("3.")) {
+                if project
+                    .dependencies
+                    .iter()
+                    .any(|d| d.name == "express" && d.version.starts_with("3."))
+                {
                     suggestions.push(Suggestion {
                         severity: SeverityLevel::Warning,
                         category: "security".to_string(),
-                        message: "Express 3.x is outdated. Consider upgrading to Express 4.x or 5.x".to_string(),
+                        message:
+                            "Express 3.x is outdated. Consider upgrading to Express 4.x or 5.x"
+                                .to_string(),
                         file: None,
                         line: None,
                     });
                 }
             }
             ProjectType::Python => {
-                if !project.path.join("requirements.txt").exists() 
-                    && !project.path.join("pyproject.toml").exists() {
+                if !project.path.join("requirements.txt").exists()
+                    && !project.path.join("pyproject.toml").exists()
+                {
                     suggestions.push(Suggestion {
                         severity: SeverityLevel::Info,
                         category: "best-practices".to_string(),
@@ -216,9 +249,13 @@ impl ContextBuilder {
                                 line: None,
                             });
                         }
-                        
+
                         // Check for outdated Laravel
-                        if project.dependencies.iter().any(|d| d.name == "laravel/framework" && d.version.starts_with("^8")) {
+                        if project
+                            .dependencies
+                            .iter()
+                            .any(|d| d.name == "laravel/framework" && d.version.starts_with("^8"))
+                        {
                             suggestions.push(Suggestion {
                                 severity: SeverityLevel::Info,
                                 category: "upgrade".to_string(),
@@ -229,12 +266,16 @@ impl ContextBuilder {
                         }
                     }
                 }
-                
+
                 // Vue.js with PHP suggestions
                 if let Some(frontend) = project.metadata.extra.get("frontend") {
                     if frontend == "vue" {
                         // Check for Inertia.js (common in Laravel + Vue)
-                        if project.dependencies.iter().any(|d| d.name == "inertiajs/inertia-laravel") {
+                        if project
+                            .dependencies
+                            .iter()
+                            .any(|d| d.name == "inertiajs/inertia-laravel")
+                        {
                             suggestions.push(Suggestion {
                                 severity: SeverityLevel::Info,
                                 category: "architecture".to_string(),
@@ -245,12 +286,11 @@ impl ContextBuilder {
                         }
                     }
                 }
-                
+
                 // Security: Check for common security packages
-                let has_security_package = project.dependencies.iter().any(|d| 
-                    d.name == "paragonie/random_compat" || 
-                    d.name == "defuse/php-encryption"
-                );
+                let has_security_package = project.dependencies.iter().any(|d| {
+                    d.name == "paragonie/random_compat" || d.name == "defuse/php-encryption"
+                });
                 if !has_security_package && project.dependencies.len() > 5 {
                     suggestions.push(Suggestion {
                         severity: SeverityLevel::Info,
@@ -303,13 +343,16 @@ impl ContextBuilder {
         let mut context = String::new();
         let project = &analysis.project;
 
-        context.push_str(&format!("# {} Project Analysis\n\n", project.project_type.as_str().to_uppercase()));
+        context.push_str(&format!(
+            "# {} Project Analysis\n\n",
+            project.project_type.as_str().to_uppercase()
+        ));
         context.push_str(&format!("**Project:** {}\n", project.name));
         if let Some(ref version) = project.version {
             context.push_str(&format!("**Version:** {}\n", version));
         }
         context.push_str(&format!("**Type:** {}\n", project.project_type.as_str()));
-        
+
         // Metadata
         if let Some(ref tf) = project.metadata.target_framework {
             context.push_str(&format!("**Target Framework:** {}\n", tf));
@@ -325,10 +368,14 @@ impl ContextBuilder {
         // Dependencies
         if !project.dependencies.is_empty() {
             context.push_str("## Dependencies\n\n");
-            
-            let prod_deps: Vec<_> = project.dependencies.iter().filter(|d| !d.dev_only).collect();
+
+            let prod_deps: Vec<_> = project
+                .dependencies
+                .iter()
+                .filter(|d| !d.dev_only)
+                .collect();
             let dev_deps: Vec<_> = project.dependencies.iter().filter(|d| d.dev_only).collect();
-            
+
             if !prod_deps.is_empty() {
                 context.push_str("### Production\n");
                 for dep in prod_deps.iter().take(20) {
@@ -339,7 +386,7 @@ impl ContextBuilder {
                 }
                 context.push('\n');
             }
-            
+
             if !dev_deps.is_empty() {
                 context.push_str("### Development\n");
                 for dep in dev_deps.iter().take(10) {
@@ -354,12 +401,19 @@ impl ContextBuilder {
 
         // Statistics
         context.push_str("## Project Statistics\n\n");
-        context.push_str(&format!("- Total Files: {}\n", analysis.statistics.total_files));
-        context.push_str(&format!("- Dependencies: {}\n", analysis.statistics.package_count));
+        context.push_str(&format!(
+            "- Total Files: {}\n",
+            analysis.statistics.total_files
+        ));
+        context.push_str(&format!(
+            "- Dependencies: {}\n",
+            analysis.statistics.package_count
+        ));
         context.push('\n');
 
         // File breakdown by extension
-        let mut ext_counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+        let mut ext_counts: std::collections::HashMap<&str, usize> =
+            std::collections::HashMap::new();
         for file in &project.files {
             *ext_counts.entry(&file.language).or_insert(0) += 1;
         }
@@ -376,7 +430,10 @@ impl ContextBuilder {
             context.push_str("## Relevant Patterns\n\n");
             for pattern in analysis.patterns.iter().take(5) {
                 context.push_str(&format!("### {}\n", pattern.title));
-                context.push_str(&format!("**Category:** {} | **Framework:** {}\n", pattern.category, pattern.framework));
+                context.push_str(&format!(
+                    "**Category:** {} | **Framework:** {}\n",
+                    pattern.category, pattern.framework
+                ));
                 context.push_str(&format!("{}\n\n", pattern.description));
                 context.push_str("```\n");
                 context.push_str(&pattern.code);
@@ -409,7 +466,10 @@ impl ContextBuilder {
 
     /// Build complete analysis with patterns and suggestions
     #[allow(dead_code)]
-    pub async fn build_analysis(&self, project: DotNetProject) -> Result<crate::types::DotNetAnalysisResult> {
+    pub async fn build_analysis(
+        &self,
+        project: DotNetProject,
+    ) -> Result<crate::types::DotNetAnalysisResult> {
         // Detect framework type from packages
         let framework_type = self.detect_framework(&project);
 

@@ -5,8 +5,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-use crate::types::{CSharpFile, DotNetProject, NuGetPackage};
 use super::csharp::CSharpAnalyzer;
+use crate::types::{CSharpFile, DotNetProject, NuGetPackage};
 
 #[allow(dead_code)]
 pub struct ProjectAnalyzer {
@@ -46,8 +46,7 @@ impl ProjectAnalyzer {
     /// Errors during individual file parsing are logged but don't fail the entire analysis.
     fn analyze_csharp_files(&self, paths: &[PathBuf]) -> Result<Vec<CSharpFile>> {
         let mut files = Vec::new();
-        let mut analyzer = CSharpAnalyzer::new()
-            .context("Failed to initialize C# analyzer")?;
+        let mut analyzer = CSharpAnalyzer::new().context("Failed to initialize C# analyzer")?;
 
         for path in paths {
             match analyzer.analyze_file(path) {
@@ -57,10 +56,7 @@ impl ProjectAnalyzer {
                 }
                 Err(e) => {
                     // Log the error but continue with other files
-                    tracing::warn!(
-                        "Failed to analyze C# file {:?}: {}. Skipping.",
-                        path, e
-                    );
+                    tracing::warn!("Failed to analyze C# file {:?}: {}. Skipping.", path, e);
                 }
             }
         }
