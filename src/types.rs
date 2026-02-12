@@ -1,65 +1,108 @@
+//! Core types for the MCP Context Server.
+//!
+//! This module contains all the data structures used throughout the application,
+//! including project types, patterns, and analysis results.
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::path::PathBuf;
 
 // ============================================================================
 // Generic Multi-Language Project Types
 // ============================================================================
 
-/// Detected project type
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// Detected project type based on configuration files.
+///
+/// The project type is automatically detected by looking for specific
+/// configuration files in the project directory.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum ProjectType {
-    DotNet, // .csproj, .sln
-    Rust,   // Cargo.toml
-    Node,   // package.json
-    Python, // pyproject.toml, setup.py, requirements.txt
-    Go,     // go.mod
-    Java,   // pom.xml, build.gradle
-    Php,    // composer.json
+    /// .NET projects (.csproj, .sln)
+    DotNet,
+    /// Rust projects (Cargo.toml)
+    Rust,
+    /// Node.js projects (package.json)
+    Node,
+    /// Python projects (pyproject.toml, setup.py, requirements.txt)
+    Python,
+    /// Go projects (go.mod)
+    Go,
+    /// Java projects (pom.xml, build.gradle)
+    Java,
+    /// PHP projects (composer.json)
+    Php,
+    /// Unknown project type
     Unknown,
 }
 
 impl ProjectType {
-    pub fn as_str(&self) -> &'static str {
+    /// Returns the lowercase string representation of the project type.
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
         match self {
-            ProjectType::DotNet => "dotnet",
-            ProjectType::Rust => "rust",
-            ProjectType::Node => "node",
-            ProjectType::Python => "python",
-            ProjectType::Go => "go",
-            ProjectType::Java => "java",
-            ProjectType::Php => "php",
-            ProjectType::Unknown => "unknown",
+            Self::DotNet => "dotnet",
+            Self::Rust => "rust",
+            Self::Node => "node",
+            Self::Python => "python",
+            Self::Go => "go",
+            Self::Java => "java",
+            Self::Php => "php",
+            Self::Unknown => "unknown",
         }
     }
 }
 
-/// Generic project representation (works for any language)
+impl fmt::Display for ProjectType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+impl Default for ProjectType {
+    fn default() -> Self {
+        Self::Unknown
+    }
+}
+
+/// Generic project representation that works for any language.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Project {
+    /// Path to the project root directory
     pub path: PathBuf,
+    /// Project name
     pub name: String,
+    /// Detected project type
     pub project_type: ProjectType,
+    /// Project version (if available)
     pub version: Option<String>,
+    /// Project dependencies
     pub dependencies: Vec<Dependency>,
+    /// Source files in the project
     pub files: Vec<SourceFile>,
     /// Language-specific metadata
     pub metadata: ProjectMetadata,
 }
 
-/// Generic dependency
+/// Generic dependency representation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Dependency {
+    /// Package/crate name
     pub name: String,
+    /// Version specifier
     pub version: String,
+    /// Whether this is a development-only dependency
     pub dev_only: bool,
 }
 
-/// Generic source file
+/// Generic source file representation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceFile {
+    /// Path to the file
     pub path: PathBuf,
+    /// Programming language (file extension)
     pub language: String,
+    /// File size in bytes
     pub size_bytes: u64,
     /// Extracted symbols (classes, functions, etc.)
     pub symbols: Vec<Symbol>,
@@ -68,13 +111,18 @@ pub struct SourceFile {
 /// Generic symbol (class, function, interface, etc.)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Symbol {
+    /// Symbol name
     pub name: String,
+    /// Symbol kind
     pub kind: SymbolKind,
+    /// Visibility/access modifiers
     pub modifiers: Vec<String>,
+    /// Child symbols (methods, fields, etc.)
     pub children: Vec<Symbol>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Kind of symbol in source code.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum SymbolKind {
     Class,
     Interface,
@@ -85,13 +133,37 @@ pub enum SymbolKind {
     Enum,
     Struct,
     Module,
-    Trait,     // Rust
-    Impl,      // Rust
-    Component, // React/Vue/Blazor
+    /// Rust trait
+    Trait,
+    /// Rust impl block
+    Impl,
+    /// React/Vue/Blazor component
+    Component,
+    /// Other symbol type
     Other(String),
 }
 
-/// Language-specific metadata
+impl fmt::Display for SymbolKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Class => write!(f, "class"),
+            Self::Interface => write!(f, "interface"),
+            Self::Function => write!(f, "function"),
+            Self::Method => write!(f, "method"),
+            Self::Property => write!(f, "property"),
+            Self::Field => write!(f, "field"),
+            Self::Enum => write!(f, "enum"),
+            Self::Struct => write!(f, "struct"),
+            Self::Module => write!(f, "module"),
+            Self::Trait => write!(f, "trait"),
+            Self::Impl => write!(f, "impl"),
+            Self::Component => write!(f, "component"),
+            Self::Other(s) => write!(f, "{s}"),
+        }
+    }
+}
+
+/// Language-specific metadata for projects.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProjectMetadata {
     /// For .NET: target framework (net8.0, etc.)
@@ -114,7 +186,7 @@ pub struct ProjectMetadata {
 // Legacy .NET-specific types (kept for compatibility)
 // ============================================================================
 
-/// Represents a .NET project
+/// Represents a .NET project (legacy type for backwards compatibility).
 #[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DotNetProject {
@@ -127,7 +199,7 @@ pub struct DotNetProject {
     pub files: Vec<CSharpFile>,
 }
 
-/// NuGet package reference
+/// NuGet package reference.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NuGetPackage {
@@ -135,7 +207,7 @@ pub struct NuGetPackage {
     pub version: String,
 }
 
-/// C# source file
+/// C# source file information.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CSharpFile {
     pub path: PathBuf,
@@ -145,7 +217,7 @@ pub struct CSharpFile {
     pub interfaces: Vec<InterfaceInfo>,
 }
 
-/// Class information
+/// Class information from C# analysis.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClassInfo {
     pub name: String,
@@ -156,14 +228,14 @@ pub struct ClassInfo {
     pub properties: Vec<PropertyInfo>,
 }
 
-/// Interface information
+/// Interface information from C# analysis.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InterfaceInfo {
     pub name: String,
     pub methods: Vec<MethodInfo>,
 }
 
-/// Method information
+/// Method information from C# analysis.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MethodInfo {
     pub name: String,
@@ -173,14 +245,14 @@ pub struct MethodInfo {
     pub is_async: bool,
 }
 
-/// Parameter information
+/// Parameter information.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Parameter {
     pub name: String,
     pub param_type: String,
 }
 
-/// Property information
+/// Property information from C# analysis.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PropertyInfo {
     pub name: String,
@@ -189,33 +261,60 @@ pub struct PropertyInfo {
     pub has_setter: bool,
 }
 
-/// Code pattern for training
+// ============================================================================
+// Pattern and Training Types
+// ============================================================================
+
+/// Code pattern for training and suggestions.
+///
+/// Patterns are reusable code examples that can be searched and
+/// suggested based on the project context.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CodePattern {
+    /// Unique identifier
     pub id: String,
+    /// Category (e.g., "lifecycle", "error-handling")
     pub category: String,
+    /// Target framework (e.g., "blazor-server", "react")
     pub framework: String,
+    /// Framework version
     pub version: String,
+    /// Pattern title
     pub title: String,
+    /// Pattern description
     pub description: String,
+    /// Code example
     pub code: String,
+    /// Tags for search
     pub tags: Vec<String>,
+    /// Number of times this pattern was used
     pub usage_count: usize,
+    /// Relevance score (0.0 - 1.0)
     pub relevance_score: f32,
+    /// When the pattern was created
     pub created_at: DateTime<Utc>,
+    /// When the pattern was last updated
     pub updated_at: DateTime<Utc>,
 }
 
-/// Analysis result (generic)
+// ============================================================================
+// Analysis Result Types
+// ============================================================================
+
+/// Result of analyzing a project.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalysisResult {
+    /// The analyzed project
     pub project: Project,
+    /// Relevant patterns found
     pub patterns: Vec<CodePattern>,
+    /// Suggestions for improvement
     pub suggestions: Vec<Suggestion>,
+    /// Project statistics
     pub statistics: Statistics,
 }
 
-/// Legacy analysis result for .NET (kept for compatibility)
+/// Legacy analysis result for .NET (kept for compatibility).
 #[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DotNetAnalysisResult {
@@ -225,30 +324,102 @@ pub struct DotNetAnalysisResult {
     pub statistics: Statistics,
 }
 
-/// Code suggestion
+/// Code suggestion with severity level.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Suggestion {
+    /// Severity level of the suggestion
     pub severity: SeverityLevel,
+    /// Category of the suggestion
     pub category: String,
+    /// Suggestion message
     pub message: String,
+    /// Related file (if applicable)
     pub file: Option<PathBuf>,
+    /// Line number (if applicable)
     pub line: Option<usize>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Severity level for suggestions.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SeverityLevel {
+    /// Informational suggestion
     Info,
+    /// Warning that should be addressed
     Warning,
+    /// Error that must be fixed
     Error,
 }
 
-/// Project statistics
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl fmt::Display for SeverityLevel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Info => write!(f, "info"),
+            Self::Warning => write!(f, "warning"),
+            Self::Error => write!(f, "error"),
+        }
+    }
+}
+
+impl SeverityLevel {
+    /// Returns an emoji icon for the severity level.
+    ///
+    /// Useful for displaying severity in terminal output or markdown.
+    #[must_use]
+    #[allow(dead_code)] // Utility method for future use
+    pub const fn icon(&self) -> &'static str {
+        match self {
+            Self::Info => "ℹ️",
+            Self::Warning => "⚠️",
+            Self::Error => "❌",
+        }
+    }
+}
+
+/// Project statistics summary.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Statistics {
+    /// Total number of source files
     pub total_files: usize,
+    /// Total number of classes/types
     pub total_classes: usize,
+    /// Total number of methods/functions
     pub total_methods: usize,
+    /// Total lines of code
     pub total_lines: usize,
+    /// Framework version
     pub framework_version: String,
+    /// Number of dependencies
     pub package_count: usize,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_project_type_display() {
+        assert_eq!(ProjectType::Rust.to_string(), "rust");
+        assert_eq!(ProjectType::Node.to_string(), "node");
+        assert_eq!(ProjectType::Unknown.to_string(), "unknown");
+    }
+
+    #[test]
+    fn test_severity_level_display() {
+        assert_eq!(SeverityLevel::Info.to_string(), "info");
+        assert_eq!(SeverityLevel::Warning.to_string(), "warning");
+        assert_eq!(SeverityLevel::Error.to_string(), "error");
+    }
+
+    #[test]
+    fn test_severity_level_ordering() {
+        assert!(SeverityLevel::Info < SeverityLevel::Warning);
+        assert!(SeverityLevel::Warning < SeverityLevel::Error);
+    }
+
+    #[test]
+    fn test_symbol_kind_display() {
+        assert_eq!(SymbolKind::Class.to_string(), "class");
+        assert_eq!(SymbolKind::Trait.to_string(), "trait");
+        assert_eq!(SymbolKind::Other("custom".to_string()).to_string(), "custom");
+    }
 }

@@ -4,21 +4,30 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 use super::detector::ProjectDetector;
-#[allow(unused_imports)]
-use crate::types::{
-    Dependency, Project, ProjectMetadata, ProjectType, SourceFile, Symbol, SymbolKind,
-};
+use crate::types::{Dependency, Project, ProjectMetadata, ProjectType, SourceFile};
 
-/// Generic project analyzer that works with any project type
+/// Generic project analyzer that works with any project type.
+///
+/// Supports multiple project types including Rust, Node.js, Python, .NET,
+/// Go, Java, and PHP projects.
 pub struct GenericAnalyzer;
 
 impl GenericAnalyzer {
-    /// Analyze a project directory and return a generic Project struct
+    /// Analyze a project directory and return a generic Project struct.
+    ///
+    /// # Arguments
+    /// * `path` - Path to the project root directory
+    ///
+    /// # Returns
+    /// A `Project` struct containing detected type, dependencies, and metadata
+    ///
+    /// # Errors
+    /// Returns an error if the project cannot be analyzed or required files are missing
     pub async fn analyze(path: &Path) -> Result<Project> {
         // Detect project type
         let project_type = ProjectDetector::detect(path);
 
-        eprintln!("DEBUG: Detected project type: {:?}", project_type);
+        tracing::debug!(project_type = ?project_type, "Detected project type");
 
         // Get project info based on type
         let (name, version, dependencies, metadata) = match project_type {

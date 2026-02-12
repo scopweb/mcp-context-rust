@@ -335,19 +335,30 @@ impl TrainingManager {
         scored
     }
 
+    /// Calculates a relevance score for a pattern based on search criteria.
+    ///
+    /// The score is composed of:
+    /// - Base relevance score from the pattern
+    /// - Usage count boost (popular patterns)
+    /// - Query match bonuses (title, description, code)
+    /// - Tag match bonus
+    /// - Recency boost (patterns updated in last 30 days)
     fn score_pattern(&self, pattern: &CodePattern, criteria: &SearchCriteria) -> f32 {
         let mut score = pattern.relevance_score;
 
         // Boost score based on usage count (popular patterns)
+        // Using log10 to prevent high-usage patterns from dominating
         if pattern.usage_count > 0 {
-            score += (pattern.usage_count as f32).log10() * 0.05;
+            #[allow(clippy::cast_precision_loss)]
+            let usage_boost = (pattern.usage_count as f32).log10() * 0.05;
+            score += usage_boost;
         }
 
         // Check query match (if provided)
         if let Some(ref query) = criteria.query {
             let query_lower = query.to_lowercase();
 
-            // Title match (high weight)
+            // Title match (high weight) - most important
             if pattern.title.to_lowercase().contains(&query_lower) {
                 score += 0.3;
             }
@@ -363,18 +374,18 @@ impl TrainingManager {
             }
         }
 
-        // Check tag matches
+        // Check tag matches - optimized to avoid allocations
+        // Instead of creating HashSets, we count matches directly
         if !criteria.tags.is_empty() {
-            let pattern_tags: HashSet<String> = pattern.tags.iter().cloned().collect();
-            let criteria_tags: HashSet<String> = criteria.tags.iter().cloned().collect();
+            let matching_tags = criteria
+                .tags
+                .iter()
+                .filter(|tag| pattern.tags.contains(tag))
+                .count();
 
-            let matching_tags = pattern_tags.intersection(&criteria_tags).count();
-            let total_criteria_tags = criteria.tags.len();
-
-            if total_criteria_tags > 0 {
-                let tag_score = matching_tags as f32 / total_criteria_tags as f32;
-                score += tag_score * 0.2;
-            }
+            #[allow(clippy::cast_precision_loss)]
+            let tag_score = matching_tags as f32 / criteria.tags.len() as f32;
+            score += tag_score * 0.2;
         }
 
         // Recency boost (newer patterns get slight advantage)
@@ -383,7 +394,7 @@ impl TrainingManager {
             score += 0.05;
         }
 
-        score // No cap - allow scores to differentiate patterns
+        score
     }
 
     /// Convenience method for simple searches

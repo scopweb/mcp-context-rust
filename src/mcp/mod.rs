@@ -47,27 +47,33 @@ struct JsonRpcError {
 }
 
 impl Server {
+    /// Creates a new MCP server instance.
+    ///
+    /// # Arguments
+    /// * `config` - Server configuration
+    ///
+    /// # Returns
+    /// A configured Server instance ready to run
     pub async fn new(config: Config) -> Result<Self> {
         // Initialize training manager
         let patterns_path = config.storage.base_path.join(&config.storage.patterns_file);
-        eprintln!("Looking for patterns in: {}", patterns_path.display());
+        tracing::info!(path = %patterns_path.display(), "Looking for patterns");
         let mut training_manager = TrainingManager::new(patterns_path.clone());
 
         // Load existing patterns
         match training_manager.load_patterns().await {
             Ok(_) => {
-                eprintln!(
-                    "Successfully loaded {} patterns",
-                    training_manager.get_all_patterns().len()
+                tracing::info!(
+                    count = training_manager.get_all_patterns().len(),
+                    "Successfully loaded patterns"
                 );
             }
             Err(e) => {
-                eprintln!(
-                    "Error loading patterns from {}: {}",
-                    patterns_path.display(),
-                    e
+                tracing::warn!(
+                    path = %patterns_path.display(),
+                    error = %e,
+                    "Error loading patterns, continuing with empty database"
                 );
-                eprintln!("Continuing with empty pattern database...");
             }
         }
 
@@ -77,14 +83,17 @@ impl Server {
         })
     }
 
+    /// Runs the MCP server main loop.
+    ///
+    /// Listens on stdio for JSON-RPC requests and processes them.
     pub async fn run(mut self) -> Result<()> {
-        eprintln!("MCP server starting on stdio transport");
+        tracing::info!("MCP server starting on stdio transport");
 
         let stdin = tokio::io::stdin();
         let mut reader = BufReader::new(stdin);
         let mut stdout = tokio::io::stdout();
 
-        eprintln!("Waiting for requests...");
+        tracing::debug!("Waiting for requests...");
 
         // Track if client uses Content-Length framing
         let mut use_framing = false;
@@ -97,9 +106,9 @@ impl Server {
                     if json_body.is_empty() {
                         continue;
                     }
-                    eprintln!(
-                        "Received request: {}",
-                        &json_body[..json_body.len().min(100)]
+                    tracing::debug!(
+                        request = %&json_body[..json_body.len().min(100)],
+                        "Received request"
                     );
 
                     match serde_json::from_str::<JsonRpcRequest>(&json_body) {
@@ -107,14 +116,14 @@ impl Server {
                             // Check if this is a notification (no id field)
                             if request.id.is_none() && request.method.starts_with("notifications/")
                             {
-                                eprintln!("Received notification: {}, ignoring", request.method);
+                                tracing::trace!(method = %request.method, "Received notification, ignoring");
                                 continue;
                             }
 
                             let response = self.handle_request(request).await;
                             match serde_json::to_string(&response) {
                                 Ok(response_str) => {
-                                    eprintln!("Sending response (framing={})", use_framing);
+                                    tracing::trace!(framing = use_framing, "Sending response");
                                     // Send response matching client's framing style
                                     if let Err(e) = Self::write_mcp_message(
                                         &mut stdout,
@@ -123,20 +132,18 @@ impl Server {
                                     )
                                     .await
                                     {
-                                        eprintln!("Error writing response: {}", e);
+                                        tracing::error!(error = %e, "Error writing response");
                                         break;
                                     }
-                                    eprintln!(
-                                        "Response sent successfully, waiting for next request..."
-                                    );
+                                    tracing::trace!("Response sent successfully");
                                 }
                                 Err(e) => {
-                                    eprintln!("Error serializing response: {}", e);
+                                    tracing::error!(error = %e, "Error serializing response");
                                 }
                             }
                         }
                         Err(e) => {
-                            eprintln!("Failed to parse request: {}", e);
+                            tracing::warn!(error = %e, "Failed to parse request");
                             let error_response = JsonRpcResponse {
                                 jsonrpc: "2.0".to_string(),
                                 id: None,
@@ -157,17 +164,17 @@ impl Server {
                     }
                 }
                 Ok(None) => {
-                    eprintln!("stdin closed (EOF)");
+                    tracing::info!("stdin closed (EOF)");
                     break;
                 }
                 Err(e) => {
-                    eprintln!("Error reading from stdin: {}", e);
+                    tracing::error!(error = %e, "Error reading from stdin");
                     break;
                 }
             }
         }
 
-        eprintln!("MCP server shutting down");
+        tracing::info!("MCP server shutting down");
         Ok(())
     }
 
@@ -231,9 +238,9 @@ impl Server {
             Ok(Some(String::new()))
         } else {
             // Unknown format - try to parse as JSON anyway
-            eprintln!(
-                "Warning: Unexpected line format, attempting to parse: {}",
-                &trimmed[..trimmed.len().min(50)]
+            tracing::warn!(
+                content = %&trimmed[..trimmed.len().min(50)],
+                "Unexpected line format, attempting to parse"
             );
             Ok(Some(trimmed.to_string()))
         }
@@ -481,7 +488,7 @@ impl Server {
         }
     }
 
-    // Tool: analyze-project
+    /// Analyzes a project and returns structured context.
     async fn tool_analyze_project(
         &self,
         args: &serde_json::Value,
@@ -490,7 +497,7 @@ impl Server {
             .as_str()
             .ok_or("Missing project_path")?;
 
-        eprintln!("DEBUG: Analyzing project path: {}", project_path);
+        tracing::debug!(path = %project_path, "Analyzing project");
 
         // Validate path exists
         let path = PathBuf::from(project_path);
@@ -508,17 +515,17 @@ impl Server {
             ));
         }
 
-        eprintln!("DEBUG: Path exists and is directory, detecting project type...");
+        tracing::debug!("Path validated, detecting project type");
 
         // Use the new generic analyzer
         let project = GenericAnalyzer::analyze(path.as_path())
             .await
             .map_err(|e| {
-                eprintln!("DEBUG: Analysis failed with error: {}", e);
+                tracing::warn!(error = %e, "Analysis failed");
                 format!("Failed to analyze project: {}. Make sure the directory contains a valid project file (Cargo.toml, package.json, .csproj, pyproject.toml, go.mod, or pom.xml).", e)
             })?;
 
-        eprintln!("DEBUG: Detected project type: {:?}", project.project_type);
+        tracing::debug!(project_type = ?project.project_type, "Project analyzed successfully");
 
         // Build context with patterns
         let context_builder =
