@@ -420,6 +420,9 @@ mod tests {
     fn test_symbol_kind_display() {
         assert_eq!(SymbolKind::Class.to_string(), "class");
         assert_eq!(SymbolKind::Trait.to_string(), "trait");
-        assert_eq!(SymbolKind::Other("custom".to_string()).to_string(), "custom");
+        assert_eq!(
+            SymbolKind::Other("custom".to_string()).to_string(),
+            "custom"
+        );
     }
 }
