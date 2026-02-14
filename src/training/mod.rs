@@ -122,7 +122,7 @@ impl TrainingManager {
 
             if path.extension().and_then(|s| s.to_str()) == Some("json") {
                 self.load_pattern_file(path)
-                    .context(format!("Failed to load pattern file: {:?}", path))?;
+                    .context(format!("Failed to load pattern file: {}", path.display()))?;
             }
         }
 
@@ -222,7 +222,7 @@ impl TrainingManager {
                 serde_json::to_string_pretty(&file).context("Failed to serialize patterns")?;
 
             fs::write(&file_path, json)
-                .context(format!("Failed to write pattern file: {:?}", file_path))?;
+                .context(format!("Failed to write pattern file: {}", file_path.display()))?;
         }
 
         tracing::info!(

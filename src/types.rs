@@ -16,7 +16,7 @@ use std::path::PathBuf;
 ///
 /// The project type is automatically detected by looking for specific
 /// configuration files in the project directory.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
 pub enum ProjectType {
     /// .NET projects (.csproj, .sln)
     DotNet,
@@ -33,6 +33,7 @@ pub enum ProjectType {
     /// PHP projects (composer.json)
     Php,
     /// Unknown project type
+    #[default]
     Unknown,
 }
 
@@ -59,11 +60,6 @@ impl fmt::Display for ProjectType {
     }
 }
 
-impl Default for ProjectType {
-    fn default() -> Self {
-        Self::Unknown
-    }
-}
 
 /// Generic project representation that works for any language.
 #[derive(Debug, Clone, Serialize, Deserialize)]
