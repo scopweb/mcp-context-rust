@@ -30,7 +30,7 @@ impl GenericAnalyzer {
         // Detect project type
         let project_type = ProjectDetector::detect(path);
 
-tracing::debug!(project_type = ?project_type, "Detected project type");
+        tracing::debug!(project_type = ?project_type, "Detected project type");
 
         // Get project info based on type
         let (name, version, dependencies, metadata) = match project_type {

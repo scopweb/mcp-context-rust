@@ -106,7 +106,7 @@ impl Server {
                     if json_body.is_empty() {
                         continue;
                     }
-tracing::debug!(
+                    tracing::debug!(
                         request = %&json_body[..json_body.len().min(100)],
                         "Received request"
                     );
@@ -132,7 +132,7 @@ tracing::debug!(
                                     )
                                     .await
                                     {
-tracing::error!(error = %e, "Error writing response");
+                                        tracing::error!(error = %e, "Error writing response");
                                         break;
                                     }
                                     tracing::trace!("Response sent successfully");
@@ -238,7 +238,7 @@ tracing::error!(error = %e, "Error writing response");
             Ok(Some(String::new()))
         } else {
             // Unknown format - try to parse as JSON anyway
-tracing::warn!(
+            tracing::warn!(
                 content = %&trimmed[..trimmed.len().min(50)],
                 "Unexpected line format, attempting to parse"
             );
