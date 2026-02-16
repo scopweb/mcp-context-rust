@@ -47,27 +47,27 @@
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::cognitive_complexity)]
 #![allow(clippy::significant_drop_tightening)]
-#![allow(clippy::unused_async)]           // Async for API consistency
-#![allow(clippy::similar_names)]          // Domain names like has_getter/has_setter
-#![allow(clippy::unused_self)]            // Methods may use self in future
-#![allow(clippy::if_not_else)]            // Readability preference
+#![allow(clippy::unused_async)] // Async for API consistency
+#![allow(clippy::similar_names)] // Domain names like has_getter/has_setter
+#![allow(clippy::unused_self)] // Methods may use self in future
+#![allow(clippy::if_not_else)] // Readability preference
 #![allow(clippy::struct_excessive_bools)] // Legacy .NET types
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::cast_precision_loss)]
-#![allow(clippy::match_same_arms)]        // Readability in match statements
+#![allow(clippy::match_same_arms)] // Readability in match statements
 #![allow(clippy::redundant_closure_for_method_calls)]
-#![allow(clippy::uninlined_format_args)]  // Style preference
-#![allow(clippy::unnecessary_wraps)]      // API consistency
+#![allow(clippy::uninlined_format_args)] // Style preference
+#![allow(clippy::unnecessary_wraps)] // API consistency
 #![allow(clippy::items_after_statements)] // Local structs in functions
-#![allow(clippy::format_push_string)]     // push_str + format! is fine
-#![allow(clippy::map_unwrap_or)]          // map().unwrap_or() is readable
-#![allow(clippy::option_if_let_else)]     // Style preference
+#![allow(clippy::format_push_string)] // push_str + format! is fine
+#![allow(clippy::map_unwrap_or)] // map().unwrap_or() is readable
+#![allow(clippy::option_if_let_else)] // Style preference
 #![allow(clippy::return_self_not_must_use)] // Builder pattern
-#![allow(clippy::assigning_clones)]       // Clone assignment is clear
-#![allow(clippy::ignored_unit_patterns)]  // Style preference
-#![allow(clippy::doc_markdown)]           // Skip doc backticks check
-#![allow(clippy::use_debug)]              // Debug formatting is fine in tracing
+#![allow(clippy::assigning_clones)] // Clone assignment is clear
+#![allow(clippy::ignored_unit_patterns)] // Style preference
+#![allow(clippy::doc_markdown)] // Skip doc backticks check
+#![allow(clippy::use_debug)] // Debug formatting is fine in tracing
 
 pub mod analyzer;
 pub mod config;
