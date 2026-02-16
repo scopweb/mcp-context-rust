@@ -221,8 +221,10 @@ impl TrainingManager {
             let json =
                 serde_json::to_string_pretty(&file).context("Failed to serialize patterns")?;
 
-            fs::write(&file_path, json)
-                .context(format!("Failed to write pattern file: {}", file_path.display()))?;
+            fs::write(&file_path, json).context(format!(
+                "Failed to write pattern file: {}",
+                file_path.display()
+            ))?;
         }
 
         tracing::info!(
