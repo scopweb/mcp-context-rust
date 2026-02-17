@@ -582,17 +582,53 @@ impl Server {
 
         // Generate formatted context
         let full_output = context_builder.build_generic_context_string(&analysis);
+        let compact = context_builder.build_compact_context_string(&analysis);
+        let framework = context_builder.detect_framework_from_project(&analysis.project);
 
-        let output = if self.endless_mode {
-            let compact = context_builder.build_compact_context_string(&analysis);
-            let obs_id: String = self
-                .observations
-                .save("analyze-project", &full_output)
-                .await
-                .map_err(|e| format!("Failed to archive observation: {}", e))?;
+        // Archive full output in endless mode
+        let obs_id: Option<String> = if self.endless_mode {
+            Some(
+                self.observations
+                    .save("analyze-project", &full_output)
+                    .await
+                    .map_err(|e| format!("Failed to archive observation: {}", e))?,
+            )
+        } else {
+            None
+        };
+
+        // Save .rustscp into the analyzed project directory (non-fatal)
+        {
+            let rustscp_created_at = crate::rustscp::ProjectContext::load(&path)
+                .ok()
+                .flatten()
+                .map(|e| e.created_at)
+                .unwrap_or_else(chrono::Utc::now);
+            let project_ctx = crate::rustscp::ProjectContext {
+                version: "1".to_string(),
+                created_at: rustscp_created_at,
+                updated_at: chrono::Utc::now(),
+                project_name: analysis.project.name.clone(),
+                project_type: analysis.project.project_type.as_str().to_string(),
+                project_version: analysis.project.version.clone(),
+                framework,
+                summary: compact.clone(),
+                obs_id: obs_id.clone(),
+                suggestions: analysis
+                    .suggestions
+                    .iter()
+                    .map(|s| s.message.clone())
+                    .collect(),
+            };
+            if let Err(e) = project_ctx.save(&path) {
+                tracing::warn!(error = %e, "Failed to save .rustscp to project directory");
+            }
+        }
+
+        let output = if let Some(ref id) = obs_id {
             format!(
                 "{}\nobs_id:{} (call get-observation to see full analysis)",
-                compact, obs_id
+                compact, id
             )
         } else {
             full_output

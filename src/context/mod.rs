@@ -62,7 +62,7 @@ impl ContextBuilder {
     }
 
     /// Detect framework from generic project
-    fn detect_framework_from_project(&self, project: &Project) -> String {
+    pub fn detect_framework_from_project(&self, project: &Project) -> String {
         match project.project_type {
             ProjectType::DotNet => {
                 // Check for Blazor, ASP.NET, etc.

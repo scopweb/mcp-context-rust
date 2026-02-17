@@ -75,6 +75,7 @@ pub mod context;
 pub mod error;
 pub mod mcp;
 pub mod observations;
+pub mod rustscp;
 pub mod training;
 pub mod types;
 pub mod utils;
