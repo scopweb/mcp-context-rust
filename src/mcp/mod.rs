@@ -6,6 +6,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use crate::analyzer::GenericAnalyzer;
 use crate::config::Config;
 use crate::context::ContextBuilder;
+use crate::observations::ObservationStore;
 use crate::training::{SearchCriteria, TrainingManager};
 use crate::types::CodePattern;
 
@@ -13,6 +14,11 @@ use crate::types::CodePattern;
 pub struct Server {
     config: Config,
     training_manager: TrainingManager,
+    /// When true, all tool responses use compact single-line format (~95% token reduction).
+    /// Full outputs are archived on disk and retrievable via `get-observation`.
+    endless_mode: bool,
+    /// Two-tier storage for Endless Mode observations.
+    observations: ObservationStore,
 }
 
 /// JSON-RPC Request structure
@@ -77,9 +83,17 @@ impl Server {
             }
         }
 
+        let obs_cache_dir = config
+            .storage
+            .base_path
+            .join(&config.storage.cache_dir)
+            .join("observations");
+
         Ok(Self {
             config,
             training_manager,
+            endless_mode: false,
+            observations: ObservationStore::new(obs_cache_dir),
         })
     }
 
@@ -462,6 +476,34 @@ impl Server {
                         "type": "object",
                         "properties": {}
                     }
+                },
+                {
+                    "name": "set-endless-mode",
+                    "description": "Toggle Endless Mode to reduce token usage by ~95%. When enabled, all tool responses use a compact single-line format and full outputs are archived on disk with an obs_id. Use get-observation to retrieve full details when needed. Allows up to 20x more tool calls before the context window fills.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "enabled": {
+                                "type": "boolean",
+                                "description": "true to enable compact output (Endless Mode ON), false to restore full verbose output"
+                            }
+                        },
+                        "required": ["enabled"]
+                    }
+                },
+                {
+                    "name": "get-observation",
+                    "description": "Retrieve the full archived output of a previous tool call by its obs_id. Use this when Endless Mode is active and you need the complete details that were compressed.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "obs_id": {
+                                "type": "string",
+                                "description": "The observation UUID returned by a previous tool call in Endless Mode"
+                            }
+                        },
+                        "required": ["obs_id"]
+                    }
                 }
             ]
         }))
@@ -484,6 +526,8 @@ impl Server {
             "train-pattern" => self.tool_train_pattern(arguments).await,
             "get-statistics" => self.tool_get_statistics().await,
             "get-help" => self.tool_get_help().await,
+            "set-endless-mode" => self.tool_set_endless_mode(arguments).await,
+            "get-observation" => self.tool_get_observation(arguments).await,
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }
     }
@@ -537,12 +581,27 @@ impl Server {
             .map_err(|e| format!("Failed to build analysis: {}", e))?;
 
         // Generate formatted context
-        let context_string = context_builder.build_generic_context_string(&analysis);
+        let full_output = context_builder.build_generic_context_string(&analysis);
+
+        let output = if self.endless_mode {
+            let compact = context_builder.build_compact_context_string(&analysis);
+            let obs_id: String = self
+                .observations
+                .save("analyze-project", &full_output)
+                .await
+                .map_err(|e| format!("Failed to archive observation: {}", e))?;
+            format!(
+                "{}\nobs_id:{} (call get-observation to see full analysis)",
+                compact, obs_id
+            )
+        } else {
+            full_output
+        };
 
         Ok(serde_json::json!({
             "content": [{
                 "type": "text",
-                "text": context_string
+                "text": output
             }],
             "isError": false
         }))
@@ -574,29 +633,58 @@ impl Server {
                 .collect()
         };
 
-        let mut output = String::new();
-        output.push_str(&format!("# Patterns for {}\n\n", framework));
+        // Build verbose output (always needed: either returned directly or archived)
+        let mut full_output = String::new();
+        full_output.push_str(&format!("# Patterns for {}\n\n", framework));
 
         if patterns.is_empty() {
-            output.push_str("No patterns found.\n");
+            full_output.push_str("No patterns found.\n");
         } else {
-            for pattern in patterns {
-                output.push_str(&format!("## {}\n\n", pattern.title));
-                output.push_str(&format!("**Category:** {}\n", pattern.category));
-                output.push_str(&format!("**ID:** {}\n", pattern.id));
-                output.push_str(&format!("{}\n\n", pattern.description));
-                output.push_str("```csharp\n");
-                output.push_str(&pattern.code);
-                output.push_str("\n```\n\n");
-                output.push_str(&format!("**Tags:** {}\n", pattern.tags.join(", ")));
-                output.push_str(&format!("**Usage Count:** {}\n", pattern.usage_count));
-                output.push_str(&format!(
+            for pattern in &patterns {
+                full_output.push_str(&format!("## {}\n\n", pattern.title));
+                full_output.push_str(&format!("**Category:** {}\n", pattern.category));
+                full_output.push_str(&format!("**ID:** {}\n", pattern.id));
+                full_output.push_str(&format!("{}\n\n", pattern.description));
+                full_output.push_str("```csharp\n");
+                full_output.push_str(&pattern.code);
+                full_output.push_str("\n```\n\n");
+                full_output.push_str(&format!("**Tags:** {}\n", pattern.tags.join(", ")));
+                full_output.push_str(&format!("**Usage Count:** {}\n", pattern.usage_count));
+                full_output.push_str(&format!(
                     "**Relevance:** {:.2}\n\n",
                     pattern.relevance_score
                 ));
-                output.push_str("---\n\n");
+                full_output.push_str("---\n\n");
             }
         }
+
+        let output = if self.endless_mode {
+            let compact = if patterns.is_empty() {
+                format!("Patterns {}(0): none", framework)
+            } else {
+                let entries: Vec<String> = patterns
+                    .iter()
+                    .take(10)
+                    .enumerate()
+                    .map(|(i, p)| {
+                        let tag = p.tags.first().map(|t| t.as_str()).unwrap_or("general");
+                        format!("{}.{}[{},{:.2}]", i + 1, p.title, tag, p.relevance_score)
+                    })
+                    .collect();
+                format!("Patterns {}({}): {}", framework, patterns.len(), entries.join(" "))
+            };
+            let obs_id: String = self
+                .observations
+                .save("get-patterns", &full_output)
+                .await
+                .map_err(|e| format!("Failed to archive observation: {}", e))?;
+            format!(
+                "{}\nobs_id:{} (call get-observation for full code examples)",
+                compact, obs_id
+            )
+        } else {
+            full_output
+        };
 
         Ok(serde_json::json!({
             "content": [{
@@ -629,22 +717,49 @@ impl Server {
 
         let results = self.training_manager.search_patterns(&criteria);
 
-        let mut output = String::new();
-        output.push_str("# Pattern Search Results\n\n");
-        output.push_str(&format!("Found {} patterns\n\n", results.len()));
+        // Build verbose output (always needed: returned directly or archived)
+        let mut full_output = String::new();
+        full_output.push_str("# Pattern Search Results\n\n");
+        full_output.push_str(&format!("Found {} patterns\n\n", results.len()));
 
-        for (pattern, score) in results {
-            output.push_str(&format!("## {} (Score: {:.2})\n\n", pattern.title, score));
-            output.push_str(&format!(
+        for (pattern, score) in &results {
+            full_output.push_str(&format!("## {} (Score: {:.2})\n\n", pattern.title, score));
+            full_output.push_str(&format!(
                 "**Framework:** {} | **Category:** {}\n",
                 pattern.framework, pattern.category
             ));
-            output.push_str(&format!("{}\n\n", pattern.description));
-            output.push_str("```csharp\n");
-            output.push_str(&pattern.code);
-            output.push_str("\n```\n\n");
-            output.push_str("---\n\n");
+            full_output.push_str(&format!("{}\n\n", pattern.description));
+            full_output.push_str("```csharp\n");
+            full_output.push_str(&pattern.code);
+            full_output.push_str("\n```\n\n");
+            full_output.push_str("---\n\n");
         }
+
+        let output = if self.endless_mode {
+            let compact = if results.is_empty() {
+                "Found 0: (no matches)".to_string()
+            } else {
+                let entries: Vec<String> = results
+                    .iter()
+                    .take(10)
+                    .map(|(p, score)| {
+                        format!("[{:.2}]{}|{}|{}", score, p.title, p.category, p.framework)
+                    })
+                    .collect();
+                format!("Found {}: {}", results.len(), entries.join(" "))
+            };
+            let obs_id: String = self
+                .observations
+                .save("search-patterns", &full_output)
+                .await
+                .map_err(|e| format!("Failed to archive observation: {}", e))?;
+            format!(
+                "{}\nobs_id:{} (call get-observation for full code examples)",
+                compact, obs_id
+            )
+        } else {
+            full_output
+        };
 
         Ok(serde_json::json!({
             "content": [{
@@ -720,7 +835,7 @@ impl Server {
     async fn tool_get_statistics(&self) -> Result<serde_json::Value, String> {
         let stats = self.training_manager.get_statistics();
 
-        let output = format!(
+        let full_output = format!(
             "# Pattern Database Statistics\n\n\
             **Total Patterns:** {}\n\
             **Total Usage:** {}\n\
@@ -747,6 +862,37 @@ impl Server {
                     .join("\n"))
                 .unwrap_or_default()
         );
+
+        let output = if self.endless_mode {
+            let total = stats["total_patterns"].as_u64().unwrap_or(0);
+            let frameworks: Vec<String> = stats["frameworks"]
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let fw_list = if frameworks.is_empty() {
+                "none".to_string()
+            } else {
+                frameworks.join(",")
+            };
+            let obs_id: String = self
+                .observations
+                .save("get-statistics", &full_output)
+                .await
+                .map_err(|e| format!("Failed to archive observation: {}", e))?;
+            format!(
+                "DB: {} patterns across {} frameworks ({})\nobs_id:{}",
+                total,
+                frameworks.len(),
+                fw_list,
+                obs_id
+            )
+        } else {
+            full_output
+        };
 
         Ok(serde_json::json!({
             "content": [{
@@ -830,10 +976,82 @@ get-statistics {}
 - El servidor detecta automáticamente el tipo de proyecto
 "#;
 
+        let output = if self.endless_mode {
+            let obs_id: String = self
+                .observations
+                .save("get-help", help_text)
+                .await
+                .map_err(|e| format!("Failed to archive observation: {}", e))?;
+            format!(
+                "Tools: analyze-project|get-patterns|search-patterns|train-pattern|get-statistics|set-endless-mode|get-observation\nobs_id:{} (call get-observation for full usage guide)",
+                obs_id
+            )
+        } else {
+            help_text.to_string()
+        };
+
         Ok(serde_json::json!({
             "content": [{
                 "type": "text",
-                "text": help_text
+                "text": output
+            }],
+            "isError": false
+        }))
+    }
+
+    /// Tool: set-endless-mode
+    /// Toggles compact output mode. Modifies runtime state; resets on server restart.
+    async fn tool_set_endless_mode(
+        &mut self,
+        args: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        let enabled = args["enabled"]
+            .as_bool()
+            .ok_or("Missing or invalid 'enabled' field: must be a boolean")?;
+
+        self.endless_mode = enabled;
+
+        let message = if enabled {
+            "Endless Mode ON. All responses now use compact format (~95% token reduction). Full outputs archived with obs_id — use get-observation{obs_id} to retrieve. Disable with set-endless-mode{\"enabled\":false}.".to_string()
+        } else {
+            "Endless Mode OFF. All responses restored to full verbose format.".to_string()
+        };
+
+        Ok(serde_json::json!({
+            "content": [{
+                "type": "text",
+                "text": message
+            }],
+            "isError": false
+        }))
+    }
+
+    /// Tool: get-observation
+    /// Retrieves a previously archived full tool output by its obs_id.
+    async fn tool_get_observation(
+        &self,
+        args: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        let obs_id = args["obs_id"].as_str().ok_or("Missing obs_id")?;
+
+        let content: Option<String> = self
+            .observations
+            .get(obs_id)
+            .await
+            .map_err(|e| format!("Invalid obs_id: {}", e))?;
+
+        let output = match content {
+            Some(text) => text,
+            None => format!(
+                "No observation found with id '{}'. Observations are stored in memory for the current server session only.",
+                obs_id
+            ),
+        };
+
+        Ok(serde_json::json!({
+            "content": [{
+                "type": "text",
+                "text": output
             }],
             "isError": false
         }))

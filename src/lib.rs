@@ -74,6 +74,7 @@ pub mod config;
 pub mod context;
 pub mod error;
 pub mod mcp;
+pub mod observations;
 pub mod training;
 pub mod types;
 pub mod utils;

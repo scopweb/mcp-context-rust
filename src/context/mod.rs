@@ -460,6 +460,72 @@ impl ContextBuilder {
         context
     }
 
+    /// Build a compact single-line context string for Endless Mode.
+    ///
+    /// Targets ~100-200 characters to achieve ~95% token reduction
+    /// compared to `build_generic_context_string`.
+    pub fn build_compact_context_string(&self, analysis: &AnalysisResult) -> String {
+        let project = &analysis.project;
+
+        let version_str = project.version.as_deref().unwrap_or("?");
+        let ident = format!(
+            "[{}:{} v{}]",
+            project.project_type.as_str().to_uppercase(),
+            project.name,
+            version_str
+        );
+
+        let prod_deps = project.dependencies.iter().filter(|d| !d.dev_only).count();
+        let dev_deps = project.dependencies.iter().filter(|d| d.dev_only).count();
+
+        let edition = project
+            .metadata
+            .rust_edition
+            .as_deref()
+            .or(project.metadata.target_framework.as_deref())
+            .or(project.metadata.node_version.as_deref())
+            .unwrap_or("?");
+
+        let entry = project.metadata.entry_point.as_deref().unwrap_or("?");
+
+        let pattern_summary = if analysis.patterns.is_empty() {
+            "none".to_string()
+        } else {
+            analysis
+                .patterns
+                .iter()
+                .take(3)
+                .map(|p| p.title.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+
+        let err_count = analysis
+            .suggestions
+            .iter()
+            .filter(|s| matches!(s.severity, SeverityLevel::Error))
+            .count();
+        let warn_count = analysis
+            .suggestions
+            .iter()
+            .filter(|s| matches!(s.severity, SeverityLevel::Warning))
+            .count();
+
+        format!(
+            "{} files:{} deps:{}({}dev) edition:{} entry:{} | patterns:[{}] suggestions:{}({}err,{}warn)",
+            ident,
+            analysis.statistics.total_files,
+            prod_deps,
+            dev_deps,
+            edition,
+            entry,
+            pattern_summary,
+            analysis.suggestions.len(),
+            err_count,
+            warn_count
+        )
+    }
+
     // ========================================================================
     // Legacy .NET-specific methods (kept for compatibility)
     // ========================================================================
