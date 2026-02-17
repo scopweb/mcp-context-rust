@@ -671,7 +671,12 @@ impl Server {
                         format!("{}.{}[{},{:.2}]", i + 1, p.title, tag, p.relevance_score)
                     })
                     .collect();
-                format!("Patterns {}({}): {}", framework, patterns.len(), entries.join(" "))
+                format!(
+                    "Patterns {}({}): {}",
+                    framework,
+                    patterns.len(),
+                    entries.join(" ")
+                )
             };
             let obs_id: String = self
                 .observations

@@ -53,8 +53,11 @@ impl ObservationStore {
     /// Returns an error if the ID is not a valid UUID (prevents path traversal).
     pub async fn get(&self, obs_id: &str) -> Result<Option<String>> {
         // Validate: obs_id must be a valid UUID (no slashes, no path traversal)
-        Uuid::parse_str(obs_id)
-            .map_err(|_| anyhow!("Invalid obs_id: must be a valid UUID (e.g. 550e8400-e29b-41d4-a716-446655440000)"))?;
+        Uuid::parse_str(obs_id).map_err(|_| {
+            anyhow!(
+                "Invalid obs_id: must be a valid UUID (e.g. 550e8400-e29b-41d4-a716-446655440000)"
+            )
+        })?;
 
         let file_path = self.cache_dir.join(format!("{}.json", obs_id));
 
