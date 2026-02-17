@@ -5,6 +5,7 @@ mod analyzer;
 mod config;
 mod context;
 mod mcp;
+mod observations;
 mod training;
 mod types;
 mod utils;

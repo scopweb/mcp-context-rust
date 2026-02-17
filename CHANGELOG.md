@@ -12,6 +12,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (Endless Mode - ~95% Token Reduction)
+- **`set-endless-mode` tool** (mcp/mod.rs)
+  - Toggle compact output at runtime (`{"enabled": true/false}`)
+  - State resets on server restart (by design)
+- **`get-observation` tool** (mcp/mod.rs)
+  - Retrieve full archived output by `obs_id` UUID on demand
+- **`ObservationStore`** (observations.rs)
+  - UUID v4 keys persisted as JSON files under `data/cache/observations/`
+  - UUID validation prevents path traversal before file access
+- **Compact output mode** for all major tools (mcp/mod.rs, context/mod.rs)
+  - `analyze-project`: full output archived, returns ~150-char summary + `obs_id`
+  - `get-patterns`: list condensed to `title[tag,score]` entries + `obs_id`
+  - `search-patterns`: results condensed to `[score]title|category|fw` + `obs_id`
+  - `get-statistics`: single-line `DB: N patterns across M frameworks` + `obs_id`
+  - `get-help`: tool list on one line + `obs_id`
+- **`build_compact_context_string()`** (context/mod.rs)
+  - Single-line project summary: type, name, version, files, deps, edition, entry point, patterns, suggestions
+
+### Fixed
+- **`get-observation` error message** (mcp/mod.rs)
+  - Message incorrectly said observations are "stored in memory"; they are
+    persisted to disk at `data/cache/observations/` and survive across requests
+
 ### Added (Phase 3 - Production Polishing)
 - **Custom Error Types** (error.rs)
   - `McpError` - Main error type with variants for Analysis, Training, Config, IO, JSON
