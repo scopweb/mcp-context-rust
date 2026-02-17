@@ -414,6 +414,10 @@ impl Server {
                             "min_score": {
                                 "type": "number",
                                 "description": "Minimum relevance score (0.0 - 1.0)"
+                            },
+                            "max_results": {
+                                "type": "integer",
+                                "description": "Maximum number of results to return (default: 20)"
                             }
                         }
                     }
@@ -580,6 +584,12 @@ impl Server {
             .await
             .map_err(|e| format!("Failed to build analysis: {}", e))?;
 
+        // Save .rustscp to project directory (non-fatal on failure)
+        match crate::rustscp::ProjectContext::from_analysis(&analysis).save(&path) {
+            Ok(p) => tracing::info!(path = %p.display(), "Saved .rustscp"),
+            Err(e) => tracing::warn!(error = %e, "Failed to save .rustscp (non-fatal)"),
+        }
+
         // Generate formatted context
         let full_output = context_builder.build_generic_context_string(&analysis);
 
@@ -625,6 +635,7 @@ impl Server {
                 framework: Some(framework.to_string()),
                 tags: vec![],
                 min_score: 0.0,
+                max_results: None,
             };
             self.training_manager
                 .search_patterns(&criteria)
@@ -718,6 +729,7 @@ impl Server {
                 })
                 .unwrap_or_default(),
             min_score: args["min_score"].as_f64().unwrap_or(0.0) as f32,
+            max_results: args["max_results"].as_u64().map(|n| n as usize),
         };
 
         let results = self.training_manager.search_patterns(&criteria);
