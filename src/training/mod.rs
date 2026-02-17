@@ -87,6 +87,7 @@ pub struct SearchCriteria {
     pub framework: Option<String>,
     pub tags: Vec<String>,
     pub min_score: f32,
+    pub max_results: Option<usize>,
 }
 
 impl TrainingManager {
@@ -112,6 +113,8 @@ impl TrainingManager {
             return Ok(());
         }
 
+        let mut seen_ids: HashSet<String> = HashSet::new();
+
         // Walk through all JSON files in the patterns directory
         for entry in WalkDir::new(&self.storage_path)
             .follow_links(false)
@@ -121,7 +124,7 @@ impl TrainingManager {
             let path = entry.path();
 
             if path.extension().and_then(|s| s.to_str()) == Some("json") {
-                self.load_pattern_file(path)
+                self.load_pattern_file(path, &mut seen_ids)
                     .context(format!("Failed to load pattern file: {}", path.display()))?;
             }
         }
@@ -130,14 +133,14 @@ impl TrainingManager {
         self.rebuild_indexes();
 
         tracing::info!(
-            "Loaded {} patterns from {:?}",
+            "Loaded {} unique patterns from {:?}",
             self.patterns.len(),
             self.storage_path
         );
         Ok(())
     }
 
-    fn load_pattern_file(&mut self, path: &Path) -> Result<()> {
+    fn load_pattern_file(&mut self, path: &Path, seen_ids: &mut HashSet<String>) -> Result<()> {
         let content = fs::read_to_string(path).context("Failed to read pattern file")?;
 
         #[derive(serde::Deserialize)]
@@ -148,8 +151,21 @@ impl TrainingManager {
         let file: PatternFile =
             serde_json::from_str(&content).context("Failed to parse pattern JSON")?;
 
+        let mut duplicates = 0;
         for pattern in file.patterns {
-            self.patterns.push(pattern);
+            if seen_ids.insert(pattern.id.clone()) {
+                self.patterns.push(pattern);
+            } else {
+                duplicates += 1;
+            }
+        }
+
+        if duplicates > 0 {
+            tracing::debug!(
+                "Skipped {} duplicate patterns from {}",
+                duplicates,
+                path.display()
+            );
         }
 
         Ok(())
@@ -334,6 +350,10 @@ impl TrainingManager {
         // Sort by score descending
         scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
+        // Apply max_results limit (default: 20)
+        let limit = criteria.max_results.unwrap_or(20);
+        scored.truncate(limit);
+
         scored
     }
 
@@ -359,20 +379,35 @@ impl TrainingManager {
         // Check query match (if provided)
         if let Some(ref query) = criteria.query {
             let query_lower = query.to_lowercase();
+            let mut query_matched = false;
 
             // Title match (high weight) - most important
             if pattern.title.to_lowercase().contains(&query_lower) {
                 score += 0.3;
+                query_matched = true;
             }
 
             // Description match (medium weight)
             if pattern.description.to_lowercase().contains(&query_lower) {
                 score += 0.15;
+                query_matched = true;
             }
 
             // Code match (low weight, as code can be verbose)
             if pattern.code.to_lowercase().contains(&query_lower) {
                 score += 0.05;
+                query_matched = true;
+            }
+
+            // Tag match
+            if pattern.tags.iter().any(|t| t.to_lowercase().contains(&query_lower)) {
+                score += 0.2;
+                query_matched = true;
+            }
+
+            // Penalize patterns with no query match at all
+            if !query_matched {
+                score *= 0.3;
             }
         }
 
@@ -411,6 +446,7 @@ impl TrainingManager {
             framework: Some(framework.to_string()),
             tags: vec![],
             min_score: 0.0,
+            max_results: None,
         };
 
         self.search_patterns(&criteria)

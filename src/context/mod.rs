@@ -176,12 +176,12 @@ impl ContextBuilder {
             framework: Some(framework.to_string()),
             tags: vec![],
             min_score: 0.7,
+            max_results: Some(10),
         };
 
         let results = manager.search_patterns(&criteria);
         Ok(results
             .into_iter()
-            .take(10)
             .map(|(p, _)| p.clone())
             .collect())
     }
@@ -623,6 +623,7 @@ impl ContextBuilder {
             framework: Some(framework.to_string()),
             tags: vec![],
             min_score: 0.7, // Only high-quality patterns
+            max_results: None,
         };
 
         let scored_patterns = manager.search_patterns(&criteria);

@@ -170,6 +170,7 @@ async fn test_search_by_framework() -> Result<()> {
         framework: Some("blazor-server".to_string()),
         tags: vec![],
         min_score: 0.0,
+        max_results: None,
     };
 
     let results = manager.search_patterns(&criteria);
@@ -289,6 +290,7 @@ async fn test_search_with_scoring() -> Result<()> {
         framework: Some("blazor-server".to_string()),
         tags: vec![],
         min_score: 0.0,
+        max_results: None,
     };
 
     let results = manager.search_patterns(&criteria);
