@@ -1048,7 +1048,7 @@ get-statistics {}
         let output = match content {
             Some(text) => text,
             None => format!(
-                "No observation found with id '{}'. Observations are stored in memory for the current server session only.",
+                "No observation found with id '{}'. Check that the obs_id is correct (observations are saved to data/cache/observations/).",
                 obs_id
             ),
         };
