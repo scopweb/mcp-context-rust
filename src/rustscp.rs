@@ -134,8 +134,8 @@ impl ProjectContext {
         }
         self.updated_at = Utc::now();
 
-        let json = serde_json::to_string_pretty(self)
-            .context("Failed to serialize ProjectContext")?;
+        let json =
+            serde_json::to_string_pretty(self).context("Failed to serialize ProjectContext")?;
         std::fs::write(&file_path, &json)
             .with_context(|| format!("Failed to write {}", file_path.display()))?;
 
@@ -168,10 +168,7 @@ impl ProjectContext {
             self.project_type,
             self.framework.as_deref().unwrap_or("n/a")
         ));
-        out.push_str(&format!(
-            "**Files:** {} total",
-            self.stats.total_files
-        ));
+        out.push_str(&format!("**Files:** {} total", self.stats.total_files));
 
         // File breakdown
         if !self.stats.by_extension.is_empty() {

@@ -400,7 +400,11 @@ impl TrainingManager {
             }
 
             // Tag match
-            if pattern.tags.iter().any(|t| t.to_lowercase().contains(&query_lower)) {
+            if pattern
+                .tags
+                .iter()
+                .any(|t| t.to_lowercase().contains(&query_lower))
+            {
                 score += 0.2;
                 query_matched = true;
             }
