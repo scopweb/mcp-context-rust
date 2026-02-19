@@ -180,10 +180,7 @@ impl ContextBuilder {
         };
 
         let results = manager.search_patterns(&criteria);
-        Ok(results
-            .into_iter()
-            .map(|(p, _)| p.clone())
-            .collect())
+        Ok(results.into_iter().map(|(p, _)| p.clone()).collect())
     }
 
     /// Generate suggestions for generic project
