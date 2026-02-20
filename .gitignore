@@ -58,6 +58,5 @@ config.toml
 .vs/
 
 # Agent/AI Assistant Files
-.claude/
 .agent/
 .agents/
