@@ -189,48 +189,43 @@ impl ContextBuilder {
 
         // Project type specific suggestions
         match project.project_type {
-            ProjectType::Node => {
-                // Check for security vulnerabilities indicators
+            ProjectType::Node
                 if project
                     .dependencies
                     .iter()
-                    .any(|d| d.name == "express" && d.version.starts_with("3."))
-                {
-                    suggestions.push(Suggestion {
-                        severity: SeverityLevel::Warning,
-                        category: "security".to_string(),
-                        message:
-                            "Express 3.x is outdated. Consider upgrading to Express 4.x or 5.x"
-                                .to_string(),
-                        file: None,
-                        line: None,
-                    });
-                }
+                    .any(|d| d.name == "express" && d.version.starts_with("3.")) =>
+            {
+                suggestions.push(Suggestion {
+                    severity: SeverityLevel::Warning,
+                    category: "security".to_string(),
+                    message: "Express 3.x is outdated. Consider upgrading to Express 4.x or 5.x"
+                        .to_string(),
+                    file: None,
+                    line: None,
+                });
             }
-            ProjectType::Python => {
+            ProjectType::Python
                 if !project.path.join("requirements.txt").exists()
-                    && !project.path.join("pyproject.toml").exists()
-                {
-                    suggestions.push(Suggestion {
-                        severity: SeverityLevel::Info,
-                        category: "best-practices".to_string(),
-                        message: "Consider adding a requirements.txt or pyproject.toml for dependency management".to_string(),
-                        file: None,
-                        line: None,
-                    });
-                }
+                    && !project.path.join("pyproject.toml").exists() =>
+            {
+                suggestions.push(Suggestion {
+                    severity: SeverityLevel::Info,
+                    category: "best-practices".to_string(),
+                    message: "Consider adding a requirements.txt or pyproject.toml for dependency management".to_string(),
+                    file: None,
+                    line: None,
+                });
             }
-            ProjectType::Rust => {
-                // Check for common patterns
-                if project.dependencies.iter().any(|d| d.name == "unwrap") {
-                    suggestions.push(Suggestion {
-                        severity: SeverityLevel::Warning,
-                        category: "error-handling".to_string(),
-                        message: "Avoid using .unwrap() in production code. Use proper error handling with Result".to_string(),
-                        file: None,
-                        line: None,
-                    });
-                }
+            ProjectType::Rust
+                if project.dependencies.iter().any(|d| d.name == "unwrap") =>
+            {
+                suggestions.push(Suggestion {
+                    severity: SeverityLevel::Warning,
+                    category: "error-handling".to_string(),
+                    message: "Avoid using .unwrap() in production code. Use proper error handling with Result".to_string(),
+                    file: None,
+                    line: None,
+                });
             }
             ProjectType::Php => {
                 // Laravel specific suggestions
