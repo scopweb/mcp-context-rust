@@ -216,9 +216,7 @@ impl ContextBuilder {
                     line: None,
                 });
             }
-            ProjectType::Rust
-                if project.dependencies.iter().any(|d| d.name == "unwrap") =>
-            {
+            ProjectType::Rust if project.dependencies.iter().any(|d| d.name == "unwrap") => {
                 suggestions.push(Suggestion {
                     severity: SeverityLevel::Warning,
                     category: "error-handling".to_string(),
