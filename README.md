@@ -1,6 +1,6 @@
 # 🦀 MCP Context Rust
 
-> A multi-language Model Context Protocol (MCP) server written in Rust that provides intelligent context analysis and code pattern training for AI assistants. Supports Rust, Node.js, Python, Go, Java, PHP, and .NET projects.
+> A multi-language Model Context Protocol (MCP) server written in Rust that provides intelligent context analysis, code pattern training, **and persistent memory** for AI assistants. Supports Rust, Node.js, Python, Go, Java, PHP, and .NET projects.
 
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg?style=flat-square&logo=rust)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
@@ -11,9 +11,11 @@
 
 ## 📋 Project Status
 
-> **This is a functional MCP server for context reinforcement and code pattern training for Claude Desktop.**
+> **This is a functional MCP server for context reinforcement, code pattern training, and persistent memory for Claude Desktop.**
 >
-> ✅ **Phase 0 Complete:** Security hardened, MCP protocol compliant, 42 tests passing.
+> ✅ **Phase 0 Complete:** Security hardened, MCP protocol compliant.
+>
+> ✅ **Phase 1 Memory Core:** Persistent `remember` / `recall` / `get-memory` tools + auto-surfacing in analysis. Memories (global + per-project) survive sessions.
 >
 > The project explores advanced context management patterns and training mechanisms for AI assistants. Use it as a reference for MCP implementations or adapt the concepts to your own projects.
 >
@@ -41,6 +43,12 @@
   - 📦 State Management (2 patterns)
 - 🎓 **Pattern Training**: Incremental learning system - add your own patterns
 - 🎯 **Context-Aware**: Intelligent suggestions based on project analysis
+- 🧠 **Persistent Memory (Phase 1)**: Long-term memory across sessions
+  - `remember` important decisions, conventions, gotchas, architecture notes, preferences
+  - `recall` with advanced search + scoring
+  - `get-memory` for task-aware retrieval (global + project memories)
+  - Automatically surfaced by `analyze-project`
+  - Stored as JSON (data/memories/) with indexes; hybrid approach (SQLite later)
 - 🦀 **Rust Performance**: 10x faster than Python equivalents
 - 🔌 **MCP Native**: Works with Claude Desktop and other MCP clients
 
@@ -190,17 +198,60 @@ Claude → calls get-statistics tool
 Server → returns total patterns, categories, frameworks
 ```
 
+### Use Persistent Memory (Phase 1)
+
+```
+You: Remember that we decided to use Axum after benchmarking
+
+Claude → calls remember tool
+Server → stores in project-scoped memory (persists across sessions)
+
+You: Analyze my project at C:\Projects\MyService
+
+Claude → calls analyze-project
+Server → surfaces "We decided to use Axum..." automatically in context
+
+You: What did we decide about the web framework?
+
+Claude → calls get-memory or recall
+Server → returns relevant memories with scores
+```
+
+- Memories are **global** (user-wide) or **per-project** (tied to canonical root path)
+- Auto-surfaced by `analyze-project`
+- Use `recall` for explicit search; `get-memory` for task-aware "what I need to know now"
+
+### Get Unified Context (Phase 2 - recommended)
+
+```
+You: Give me the full context for my Rust project, I'm adding JWT authentication
+
+Claude → calls get-context { "project_path": "...", "task": "adding JWT authentication" }
+Server → returns combined: project structure + relevant past decisions (memories) + matching patterns + suggestions, all in one rich response.
+```
+
+Use this as the primary tool to get everything without multiple calls.
+
 ---
 
 ## 🛠️ Available Tools
 
+**12 tools total** (Phase 2: `get-context` unificado añadido).
+
 | Tool | Description | Parameters |
 |------|-------------|------------|
-| `analyze-project` | Analyze any project (Rust, Node, Python, Go, Java, PHP, .NET) | `project_path` (string) |
+| `analyze-project` | Analyze any project + auto-surface relevant persistent memories | `project_path` (string) |
+| `get-context` | **UNIFIED (Phase 2)**: Un solo llamado para contexto completo = análisis + memorias (con task para ranking) + mejores patrones + sugerencias | `project_path`, `task` (opcional, para mejorar relevancia) |
 | `get-patterns` | Get patterns by framework/category | `framework` (string), `category` (optional) |
 | `search-patterns` | Advanced pattern search | `query`, `framework`, `category`, `tags`, `min_score` |
 | `train-pattern` | Add custom pattern | `id`, `category`, `framework`, `title`, `description`, `code`, `tags` |
 | `get-statistics` | Database statistics | None |
+| `get-help` | Usage guide | None |
+| `set-endless-mode` | Toggle ~95% token reduction compact mode (full output via `get-observation`) | `enabled` (bool) |
+| `get-observation` | Retrieve full archived output by obs_id (for Endless Mode) | `obs_id` (string) |
+| `remember` | **(Memory)** Store decision/gotcha/convention/architecture note/preference | `scope` ("global"\|"project"), `project_path` (req for project), `category`, `title`, `content`, `tags`, `importance` |
+| `recall` | **(Memory)** Search memories (query, scope, category, tags) with scoring | `query`, `scope`, `project_path`, `category`, `tags`, `min_score`, `max_results` |
+| `get-memory` | **(Memory)** Get most relevant memories for current project/task | `project_path`, `task` (hint), `max_results` |
 
 ---
 
@@ -225,11 +276,13 @@ mcp-context-rust/
 │   ├── context/             # Context generation
 │   ├── training/            # Pattern management
 │   │   └── mod.rs           # Training system
+│   ├── memory/              # Persistent memory (Phase 1)
+│   │   └── mod.rs           # MemoryStore, remember/recall/get-memory tools
 │   └── mcp/                 # MCP protocol
-│       └── mod.rs           # Server implementation
+│       └── mod.rs           # Server implementation (12 tools, incl. get-context unificado)
 ├── data/
 │   └── patterns/            # Built-in patterns (JSON)
-├── tests/                   # Integration tests (42 tests)
+├── tests/                   # Integration + unit tests (memory, training, analyzer, endless)
 ├── docs/                    # Technical documentation
 ├── Cargo.toml
 ├── README.md

@@ -38,6 +38,12 @@ pub struct StorageConfig {
     pub base_path: PathBuf,
     pub patterns_file: String,
     pub cache_dir: String,
+    #[serde(default = "default_memories_dir")]
+    pub memories_dir: String,
+}
+
+fn default_memories_dir() -> String {
+    "memories".to_string()
 }
 
 impl Default for Config {
@@ -93,6 +99,7 @@ impl Default for Config {
                 base_path,
                 patterns_file: "patterns".to_string(), // Directory name, not file
                 cache_dir: "cache".to_string(),
+                memories_dir: "memories".to_string(),
             },
         }
     }

@@ -6,14 +6,17 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use crate::analyzer::GenericAnalyzer;
 use crate::config::Config;
 use crate::context::ContextBuilder;
+use crate::memory::MemoryStore;
 use crate::observations::ObservationStore;
 use crate::training::{SearchCriteria, TrainingManager};
-use crate::types::CodePattern;
+use crate::types::{CodePattern, MemoryScope, MemorySearchCriteria, RememberInput};
 
 /// MCP Server implementation
 pub struct Server {
     config: Config,
     training_manager: TrainingManager,
+    /// Persistent memory store (global + per-project decisions, conventions, gotchas, etc.)
+    memory_store: MemoryStore,
     /// When true, all tool responses use compact single-line format (~95% token reduction).
     /// Full outputs are archived on disk and retrievable via `get-observation`.
     endless_mode: bool,
@@ -89,9 +92,23 @@ impl Server {
             .join(&config.storage.cache_dir)
             .join("observations");
 
+        // Memory store (Phase 1)
+        let memories_path = config.storage.base_path.join(&config.storage.memories_dir);
+        tracing::info!(path = %memories_path.display(), "Initializing memory store");
+        let mut memory_store = MemoryStore::new(memories_path.clone());
+        match memory_store.load().await {
+            Ok(_) => {
+                tracing::info!(count = memory_store.len(), "Memories loaded");
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "Failed to load memories, starting empty");
+            }
+        }
+
         Ok(Self {
             config,
             training_manager,
+            memory_store,
             endless_mode: false,
             observations: ObservationStore::new(obs_cache_dir),
         })
@@ -294,7 +311,15 @@ impl Server {
                         "analyze-project",
                         "get-patterns",
                         "train-pattern",
-                        "search-patterns"
+                        "search-patterns",
+                        "get-statistics",
+                        "get-help",
+                        "set-endless-mode",
+                        "get-observation",
+                        "remember",
+                        "recall",
+                        "get-memory",
+                        "get-context"
                     ]
                 }
             }
@@ -358,13 +383,35 @@ impl Server {
             "tools": [
                 {
                     "name": "analyze-project",
-                    "description": "Analyze any project (Rust, Node, Python, .NET, Go, Java, PHP/Laravel/Vue) and get intelligent context about its structure, dependencies, and suggestions",
+                    "description": "Analyze any project (Rust, Node, Python, .NET, Go, Java, PHP/Laravel/Vue) and get intelligent context about its structure, dependencies, suggestions, and relevant persistent memories",
                     "inputSchema": {
                         "type": "object",
                         "properties": {
                             "project_path": {
                                 "type": "string",
                                 "description": "Path to the project directory (containing Cargo.toml, package.json, .csproj, pyproject.toml, go.mod, pom.xml, or composer.json)"
+                            }
+                        },
+                        "required": ["project_path"]
+                    }
+                },
+                {
+                    "name": "get-context",
+                    "description": "UNIFIED CONTEXT TOOL (recommended): Get a single rich context combining project analysis + relevant persistent memories (global + project) + best matching patterns + suggestions. Use the optional 'task' for better relevance. One call instead of multiple.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "project_path": {
+                                "type": "string",
+                                "description": "Path to the project directory"
+                            },
+                            "task": {
+                                "type": "string",
+                                "description": "Optional current task or focus (e.g. 'implementing JWT auth' or 'debugging performance') to rank memories and patterns better"
+                            },
+                            "max_memories": {
+                                "type": "integer",
+                                "description": "Max relevant memories to include (default 8)"
                             }
                         },
                         "required": ["project_path"]
@@ -508,6 +555,106 @@ impl Server {
                         },
                         "required": ["obs_id"]
                     }
+                },
+                {
+                    "name": "remember",
+                    "description": "Store an important fact, decision, convention, gotcha, architecture note, or user preference into persistent memory. Memories survive across sessions and are automatically surfaced during analyze-project and recall.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "scope": {
+                                "type": "string",
+                                "enum": ["global", "project"],
+                                "description": "'global' for user-wide knowledge or 'project' for project-specific memory"
+                            },
+                            "project_path": {
+                                "type": "string",
+                                "description": "Required when scope='project'. Absolute path to the project root."
+                            },
+                            "category": {
+                                "type": "string",
+                                "description": "Category e.g. decision, convention, gotcha, architecture, preference, fact, security, performance"
+                            },
+                            "title": {
+                                "type": "string",
+                                "description": "Short title for the memory"
+                            },
+                            "content": {
+                                "type": "string",
+                                "description": "The actual content to remember (markdown supported)"
+                            },
+                            "tags": {
+                                "type": "array",
+                                "items": { "type": "string" },
+                                "description": "Optional tags for search"
+                            },
+                            "importance": {
+                                "type": "number",
+                                "description": "Importance 0.0-1.0 (default 0.7)"
+                            }
+                        },
+                        "required": ["scope", "category", "title", "content"]
+                    }
+                },
+                {
+                    "name": "recall",
+                    "description": "Search persistent memories using free-text query, scope, category, or tags. Returns scored results (highest relevance first).",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "Free text search across title, content, category, tags"
+                            },
+                            "scope": {
+                                "type": "string",
+                                "enum": ["global", "project"],
+                                "description": "Limit to global or project memories"
+                            },
+                            "project_path": {
+                                "type": "string",
+                                "description": "When scope=project, the project root path"
+                            },
+                            "category": {
+                                "type": "string",
+                                "description": "Filter by category"
+                            },
+                            "tags": {
+                                "type": "array",
+                                "items": { "type": "string" },
+                                "description": "Only memories containing ALL these tags"
+                            },
+                            "min_score": {
+                                "type": "number",
+                                "description": "Minimum relevance score (0.0-2.0)"
+                            },
+                            "max_results": {
+                                "type": "integer",
+                                "description": "Maximum results to return (default 20)"
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "get-memory",
+                    "description": "Retrieve the most relevant persistent memories (global + project) for the current task. Use this (or rely on analyze-project which calls it automatically) to give the AI your previous decisions and context.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "project_path": {
+                                "type": "string",
+                                "description": "Project root (for project memories). If omitted only globals are returned."
+                            },
+                            "task": {
+                                "type": "string",
+                                "description": "Short description of the current task (e.g. 'adding authentication' or 'debugging prod error') to improve relevance ranking"
+                            },
+                            "max_results": {
+                                "type": "integer",
+                                "description": "Max memories (default 10)"
+                            }
+                        }
+                    }
                 }
             ]
         }))
@@ -525,6 +672,7 @@ impl Server {
 
         match tool_name {
             "analyze-project" => self.tool_analyze_project(arguments).await,
+            "get-context" => self.tool_get_context(arguments).await,
             "get-patterns" => self.tool_get_patterns(arguments).await,
             "search-patterns" => self.tool_search_patterns(arguments).await,
             "train-pattern" => self.tool_train_pattern(arguments).await,
@@ -532,13 +680,17 @@ impl Server {
             "get-help" => self.tool_get_help().await,
             "set-endless-mode" => self.tool_set_endless_mode(arguments).await,
             "get-observation" => self.tool_get_observation(arguments).await,
+            "remember" => self.tool_remember(arguments).await,
+            "recall" => self.tool_recall(arguments).await,
+            "get-memory" => self.tool_get_memory(arguments).await,
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }
     }
 
     /// Analyzes a project and returns structured context.
+    /// Also surfaces relevant persistent memories (global + project-scoped).
     async fn tool_analyze_project(
-        &self,
+        &mut self,
         args: &serde_json::Value,
     ) -> Result<serde_json::Value, String> {
         let project_path = args["project_path"]
@@ -562,6 +714,12 @@ impl Server {
                 project_path
             ));
         }
+
+        // Prefer canonical path for stable memory scoping (prevents duplicate entries due to symlinks/casing)
+        let canonical_path = std::fs::canonicalize(&path)
+            .ok()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.to_string_lossy().to_string());
 
         tracing::debug!("Path validated, detecting project type");
 
@@ -591,17 +749,200 @@ impl Server {
         }
 
         // Generate formatted context
-        let full_output = context_builder.build_generic_context_string(&analysis);
+        let mut full_output = context_builder.build_generic_context_string(&analysis);
+
+        // === Phase 1: Surface relevant persistent memories (global + this project) ===
+        let relevant = self
+            .memory_store
+            .get_relevant_for_project(Some(&canonical_path), None);
+
+        if !relevant.is_empty() {
+            let mut mem_section = String::from("\n\n## Relevant Persistent Memories\n\n");
+            mem_section.push_str(&format!(
+                "_Auto-surfaced {} memories (global + project). Use get-memory or recall for more targeted retrieval._\n\n",
+                relevant.len()
+            ));
+
+            // Collect ids first so we can drop the immutable borrow before mutating the store
+            let bump_ids: Vec<String> = relevant.iter().map(|(m, _)| m.id.clone()).collect();
+
+            for (mem, score) in &relevant {
+                mem_section.push_str(&format!("### {} (relevance {:.2})\n", mem.title, score));
+                mem_section.push_str(&format!(
+                    "**Scope:** {} | **Category:** {} | recalls: {}\n\n",
+                    mem.scope, mem.category, mem.recall_count
+                ));
+                // Truncate very long contents for the main response (user can recall specific id later if needed)
+                let content = if mem.content.len() > 1200 {
+                    format!("{}...\n\n_(content truncated; use recall with id or get-observation style for full if archived)_", &mem.content[..1200])
+                } else {
+                    mem.content.clone()
+                };
+                mem_section.push_str(&content);
+                if !mem.tags.is_empty() {
+                    mem_section.push_str(&format!("\n\n*Tags:* `{}`", mem.tags.join("`, `")));
+                }
+                mem_section.push_str("\n\n---\n\n");
+            }
+
+            full_output.push_str(&mem_section);
+
+            // Now safe to mutate: bump recall stats for the ones we surfaced
+            for id in &bump_ids {
+                let _ = self.memory_store.mark_recalled(id);
+            }
+            // Persist the recall bumps (small file, acceptable on analyze)
+            if let Err(e) = self.memory_store.save().await {
+                tracing::warn!(error = %e, "Failed to persist memory recall stats");
+            }
+        }
 
         let output = if self.endless_mode {
-            let compact = context_builder.build_compact_context_string(&analysis);
+            let mut compact = context_builder.build_compact_context_string(&analysis);
+            if !relevant.is_empty() {
+                compact.push_str(&format!(
+                    " | memories:{} (use get-memory for details)",
+                    relevant.len()
+                ));
+            }
             let obs_id: String = self
                 .observations
                 .save("analyze-project", &full_output)
                 .await
                 .map_err(|e| format!("Failed to archive observation: {}", e))?;
             format!(
-                "{}\nobs_id:{} (call get-observation to see full analysis)",
+                "{}\nobs_id:{} (call get-observation to see full analysis including memories)",
+                compact, obs_id
+            )
+        } else {
+            full_output
+        };
+
+        Ok(serde_json::json!({
+            "content": [{
+                "type": "text",
+                "text": output
+            }],
+            "isError": false
+        }))
+    }
+
+    /// Unified context tool (Phase 2). Combines analysis + memories (with optional task for relevance) + patterns + suggestions.
+    /// This is intended as the primary "one call" tool for rich context.
+    async fn tool_get_context(
+        &mut self,
+        args: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        let project_path = args["project_path"]
+            .as_str()
+            .ok_or("Missing project_path")?;
+
+        let task = args["task"].as_str(); // optional
+
+        tracing::debug!(path = %project_path, task = ?task, "Getting unified context");
+
+        // Validate path exists
+        let path = PathBuf::from(project_path);
+        if !path.exists() {
+            return Err(format!(
+                "Project path does not exist: '{}'. Please provide an absolute path to a project directory.",
+                project_path
+            ));
+        }
+
+        if !path.is_dir() {
+            return Err(format!(
+                "Path is not a directory: '{}'. Please provide a directory path, not a file path.",
+                project_path
+            ));
+        }
+
+        let canonical_path = std::fs::canonicalize(&path)
+            .ok()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.to_string_lossy().to_string());
+
+        // Analyze
+        let project = GenericAnalyzer::analyze(path.as_path())
+            .await
+            .map_err(|e| {
+                tracing::warn!(error = %e, "Analysis failed");
+                format!("Failed to analyze project: {}. Make sure the directory contains a valid project file (Cargo.toml, package.json, .csproj, pyproject.toml, go.mod, or pom.xml).", e)
+            })?;
+
+        let context_builder =
+            ContextBuilder::new().with_training_manager(self.training_manager.clone());
+
+        let analysis = context_builder
+            .build_generic_analysis(project)
+            .await
+            .map_err(|e| format!("Failed to build analysis: {}", e))?;
+
+        // Save .rustscp (non-fatal)
+        match crate::rustscp::ProjectContext::from_analysis(&analysis).save(&path) {
+            Ok(p) => tracing::info!(path = %p.display(), "Saved .rustscp"),
+            Err(e) => tracing::warn!(error = %e, "Failed to save .rustscp (non-fatal)"),
+        }
+
+        let mut full_output = context_builder.build_generic_context_string(&analysis);
+
+        // Memories, using task if provided for better ranking (Phase 2 unification)
+        let relevant = self
+            .memory_store
+            .get_relevant_for_project(Some(&canonical_path), task);
+
+        if !relevant.is_empty() {
+            let mut mem_section = String::from("\n\n## Relevant Persistent Memories\n\n");
+            mem_section.push_str(&format!(
+                "_Auto-surfaced {} memories (global + project). Task-aware ranking used when 'task' provided._\n\n",
+                relevant.len()
+            ));
+
+            let bump_ids: Vec<String> = relevant.iter().map(|(m, _)| m.id.clone()).collect();
+
+            for (mem, score) in &relevant {
+                mem_section.push_str(&format!("### {} (relevance {:.2})\n", mem.title, score));
+                mem_section.push_str(&format!(
+                    "**Scope:** {} | **Category:** {} | recalls: {}\n\n",
+                    mem.scope, mem.category, mem.recall_count
+                ));
+                let content = if mem.content.len() > 1200 {
+                    format!("{}...\n\n_(content truncated)_", &mem.content[..1200])
+                } else {
+                    mem.content.clone()
+                };
+                mem_section.push_str(&content);
+                if !mem.tags.is_empty() {
+                    mem_section.push_str(&format!("\n\n*Tags:* `{}`", mem.tags.join("`, `")));
+                }
+                mem_section.push_str("\n\n---\n\n");
+            }
+
+            full_output.push_str(&mem_section);
+
+            for id in &bump_ids {
+                let _ = self.memory_store.mark_recalled(id);
+            }
+            if let Err(e) = self.memory_store.save().await {
+                tracing::warn!(error = %e, "Failed to persist memory recall stats");
+            }
+        }
+
+        let output = if self.endless_mode {
+            let mut compact = context_builder.build_compact_context_string(&analysis);
+            if !relevant.is_empty() {
+                compact.push_str(&format!(
+                    " | memories:{} (task-aware) (use get-memory for details)",
+                    relevant.len()
+                ));
+            }
+            let obs_id: String = self
+                .observations
+                .save("get-context", &full_output)
+                .await
+                .map_err(|e| format!("Failed to archive observation: {}", e))?;
+            format!(
+                "{}\nobs_id:{} (call get-observation to see full unified context)",
                 compact, obs_id
             )
         } else {
@@ -935,7 +1276,31 @@ Servidor MCP que analiza proyectos de código y proporciona patrones de buenas p
 analyze-project { "project_path": "C:/ruta/al/proyecto" }
 ```
 - Detecta automáticamente: Rust, Node, Python, PHP, Go, Java, .NET
-- Devuelve: estructura, dependencias, framework detectado, sugerencias
+- Devuelve: estructura, dependencias, framework detectado, sugerencias **+ memorias persistentes relevantes**
+
+### 1b. Memory tools (Phase 1 - NEW)
+**remember** - Guarda decisiones, convenciones, gotchas, arquitectura, preferencias.
+```
+remember { "scope": "project", "project_path": "C:/mi/proyecto", "category": "decision", "title": "Usamos Axum", "content": "Elegimos Axum tras benchmark vs Actix. Ver ADR-003." }
+```
+**recall** - Búsqueda avanzada de memorias.
+```
+recall { "query": "error handling", "project_path": "C:/mi/proyecto", "scope": "project" }
+```
+**get-memory** - Recupera lo más relevante para la tarea actual (global + proyecto).
+```
+get-memory { "project_path": "C:/mi/proyecto", "task": "añadir auth" }
+```
+Las memorias se auto-superponen en analyze-project.
+
+### 1c. get-context (Phase 2 - NEW unified tool - recomendado)
+**Cuándo usar:** Para obtener TODO el contexto de una sola vez (análisis + memorias + patrones + sugerencias).
+```
+get-context { "project_path": "C:/mi/proyecto", "task": "implementando login con JWT" }
+```
+- Combina análisis del proyecto + memorias relevantes (con ranking por tarea) + mejores patrones + sugerencias.
+- Reduce llamadas (un tool en vez de analyze + get-memory + search-patterns).
+- El 'task' mejora la relevancia de memorias y patrones.
 
 ### 2. search-patterns
 **Cuándo usar:** El usuario pregunta "cómo hacer X" o busca buenas prácticas.
@@ -973,10 +1338,11 @@ get-statistics {}
 
 ## Flujo recomendado
 
-1. **Usuario menciona proyecto** → `analyze-project`
-2. **Usuario pregunta cómo hacer algo** → `search-patterns`
+1. **Usuario menciona proyecto** → `get-context` (o `analyze-project`)
+2. **Usuario pregunta cómo hacer algo** → `search-patterns` o `get-context` con "task"
 3. **Usuario quiere ejemplos de framework** → `get-patterns`
 4. **Usuario comparte código útil** → `train-pattern`
+5. **Recordar decisiones** → `remember` (luego aparece en get-context/analyze)
 
 ## Frameworks soportados
 - **PHP:** laravel, symfony, wordpress
@@ -1000,7 +1366,7 @@ get-statistics {}
                 .await
                 .map_err(|e| format!("Failed to archive observation: {}", e))?;
             format!(
-                "Tools: analyze-project|get-patterns|search-patterns|train-pattern|get-statistics|set-endless-mode|get-observation\nobs_id:{} (call get-observation for full usage guide)",
+                "Tools: analyze-project|get-context|get-patterns|search-patterns|train-pattern|get-statistics|set-endless-mode|get-observation|remember|recall|get-memory\nobs_id:{} (call get-observation for full usage guide)",
                 obs_id
             )
         } else {
@@ -1070,6 +1436,272 @@ get-statistics {}
                 "type": "text",
                 "text": output
             }],
+            "isError": false
+        }))
+    }
+
+    // =====================================================================
+    // Phase 1: Memory Core Tools (remember / recall / get-memory)
+    // =====================================================================
+
+    /// Tool: remember
+    /// Stores a new memory. Scope can be "global" or "project".
+    async fn tool_remember(
+        &mut self,
+        args: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        let scope_str = args["scope"]
+            .as_str()
+            .ok_or("Missing 'scope' (global|project)")?;
+
+        let scope = match scope_str {
+            "global" => MemoryScope::Global,
+            "project" => {
+                let pp = args["project_path"]
+                    .as_str()
+                    .ok_or("project_path is required when scope=\"project\"")?;
+                // Try to canonicalize for stable keys
+                let canon = std::fs::canonicalize(pp)
+                    .ok()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_else(|| pp.to_string());
+                MemoryScope::for_project(canon)
+            }
+            other => {
+                return Err(format!(
+                    "Invalid scope '{}'. Use 'global' or 'project'.",
+                    other
+                ))
+            }
+        };
+
+        let category = args["category"]
+            .as_str()
+            .ok_or("Missing 'category'")?
+            .to_string();
+        let title = args["title"].as_str().ok_or("Missing 'title'")?.to_string();
+        let content = args["content"]
+            .as_str()
+            .ok_or("Missing 'content'")?
+            .to_string();
+
+        let tags: Vec<String> = args["tags"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let importance = args["importance"].as_f64().unwrap_or(0.7) as f32;
+
+        let input = RememberInput {
+            scope,
+            category,
+            title,
+            content,
+            tags,
+            importance,
+        };
+
+        let mem = self
+            .memory_store
+            .remember(input)
+            .map_err(|e| format!("Failed to remember: {}", e))?;
+
+        self.memory_store
+            .save()
+            .await
+            .map_err(|e| format!("Failed to persist memory: {}", e))?;
+
+        let output = format!(
+            "✅ Memory stored (id: {})\n\n**Scope:** {}\n**Category:** {}\n**Title:** {}\n\n{}",
+            mem.id, mem.scope, mem.category, mem.title, mem.content
+        );
+
+        Ok(serde_json::json!({
+            "content": [{
+                "type": "text",
+                "text": output
+            }],
+            "isError": false,
+            "memory_id": mem.id
+        }))
+    }
+
+    /// Tool: recall
+    /// Advanced search over memories.
+    async fn tool_recall(&mut self, args: &serde_json::Value) -> Result<serde_json::Value, String> {
+        let mut criteria = MemorySearchCriteria::default();
+
+        if let Some(q) = args["query"].as_str() {
+            criteria.query = Some(q.to_string());
+        }
+        if let Some(cat) = args["category"].as_str() {
+            criteria.category = Some(cat.to_string());
+        }
+        if let Some(min) = args["min_score"].as_f64() {
+            criteria.min_score = min as f32;
+        }
+        if let Some(maxr) = args["max_results"].as_u64() {
+            criteria.max_results = Some(maxr as usize);
+        }
+
+        if let Some(ts) = args["tags"].as_array() {
+            criteria.tags = ts
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect();
+        }
+
+        if let Some(sc) = args["scope"].as_str() {
+            match sc {
+                "global" => criteria.scope = Some(MemoryScope::Global),
+                "project" => {
+                    let pp = args["project_path"]
+                        .as_str()
+                        .ok_or("project_path required when scope=project")?;
+                    let canon = std::fs::canonicalize(pp)
+                        .ok()
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|| pp.to_string());
+                    criteria.scope = Some(MemoryScope::for_project(canon));
+                }
+                _ => return Err("scope must be 'global' or 'project'".to_string()),
+            }
+        }
+
+        let results = self.memory_store.recall(&criteria);
+
+        // Collect ids before any mutation (results hold & into the store)
+        let ids: Vec<String> = results.iter().map(|(m, _)| m.id.clone()).collect();
+        for id in &ids {
+            let _ = self.memory_store.mark_recalled(id);
+        }
+        if !ids.is_empty() {
+            let _ = self.memory_store.save().await;
+        }
+
+        let mut full_output = String::new();
+        full_output.push_str(&format!("# Memory Recall ({} results)\n\n", results.len()));
+
+        for (mem, score) in &results {
+            full_output.push_str(&format!("## {} (score: {:.2})\n", mem.title, score));
+            full_output.push_str(&format!(
+                "id: {} | scope: {} | category: {} | recalls: {}\n\n",
+                mem.id, mem.scope, mem.category, mem.recall_count
+            ));
+            full_output.push_str(&mem.content);
+            if !mem.tags.is_empty() {
+                full_output.push_str(&format!("\n\nTags: {}", mem.tags.join(", ")));
+            }
+            full_output.push_str("\n\n---\n\n");
+        }
+
+        if results.is_empty() {
+            full_output.push_str("No memories matched your criteria.\n");
+        }
+
+        let output = if self.endless_mode {
+            let compact = format!(
+                "recall:{} memories (top score {:.2}) | use get-memory or recall with tighter query",
+                results.len(),
+                results.first().map(|(_, s)| *s).unwrap_or(0.0)
+            );
+            let obs_id = self
+                .observations
+                .save("recall", &full_output)
+                .await
+                .map_err(|e| format!("archive failed: {}", e))?;
+            format!("{}\nobs_id:{}", compact, obs_id)
+        } else {
+            full_output
+        };
+
+        Ok(serde_json::json!({
+            "content": [{ "type": "text", "text": output }],
+            "isError": false
+        }))
+    }
+
+    /// Tool: get-memory
+    /// High-level "give me what I need to know right now" for a project/task.
+    async fn tool_get_memory(
+        &mut self,
+        args: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        let project_path = args["project_path"].as_str();
+        let task = args["task"].as_str();
+        let max_results = args["max_results"].as_u64().unwrap_or(10) as usize;
+
+        let canon = project_path.map(|pp| {
+            std::fs::canonicalize(pp)
+                .ok()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| pp.to_string())
+        });
+
+        let mut relevant = self
+            .memory_store
+            .get_relevant_for_project(canon.as_deref(), task);
+
+        if relevant.len() > max_results {
+            relevant.truncate(max_results);
+        }
+
+        // Collect ids first (relevant holds borrows into store vec)
+        let ids: Vec<String> = relevant.iter().map(|(m, _)| m.id.clone()).collect();
+        for id in &ids {
+            let _ = self.memory_store.mark_recalled(id);
+        }
+        if !ids.is_empty() {
+            let _ = self.memory_store.save().await;
+        }
+
+        let mut full_output = String::new();
+        full_output.push_str("# Relevant Memories\n\n");
+
+        if let Some(t) = task {
+            full_output.push_str(&format!("Task hint: {}\n\n", t));
+        }
+
+        if relevant.is_empty() {
+            full_output.push_str("No memories found for this scope.\n");
+        } else {
+            for (mem, score) in &relevant {
+                full_output.push_str(&format!("## {} (relevance: {:.2})\n", mem.title, score));
+                full_output.push_str(&format!(
+                    "id:{} | {} | {}\n\n",
+                    mem.id, mem.scope, mem.category
+                ));
+                let c = if mem.content.len() > 800 {
+                    format!("{}…", &mem.content[..800])
+                } else {
+                    mem.content.clone()
+                };
+                full_output.push_str(&c);
+                full_output.push_str("\n\n---\n\n");
+            }
+        }
+
+        let output = if self.endless_mode {
+            let compact = format!(
+                "mem:{} relevant (use get-observation or full recall for details)",
+                relevant.len()
+            );
+            let obs_id = self
+                .observations
+                .save("get-memory", &full_output)
+                .await
+                .map_err(|e| format!("archive: {}", e))?;
+            format!("{}\nobs_id:{}", compact, obs_id)
+        } else {
+            full_output
+        };
+
+        Ok(serde_json::json!({
+            "content": [{ "type": "text", "text": output }],
             "isError": false
         }))
     }

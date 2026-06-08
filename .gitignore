@@ -30,6 +30,7 @@ Desktop.ini
 /data/cache/
 *.log
 /data/patterns/.backup/
+.rustscp
 
 # Config (may contain secrets)
 config.toml
