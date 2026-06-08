@@ -7,10 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-> **📋 Note:** Phase 0 complete. Security hardened and MCP protocol compliant.
-> Ready for Phase 1 development (corporate integrations).
+> **📋 Note:** Phase 0 complete (security + MCP). **Phase 1 Memory Core implemented** (persistent `remember`/`recall`/`get-memory` + auto-surfacing in analysis). See ROADMAP.md for remaining phases.
 
 ## [Unreleased]
+
+### Added (Phase 2: Context Unification + Pattern Renaissance - STARTED)
+- New unified `get-context` tool (the recommended primary tool)
+  - Combines in one call: full project analysis + relevant memories (global + project, with optional `task` for relevance ranking) + best matching patterns + suggestions
+  - Reduces friction: one call instead of analyze + get-memory + search-patterns
+  - Supports `task` param to make memory and pattern retrieval task-aware
+  - Respects Endless Mode (compact + obs_id archiving)
+  - Also saves .rustscp like analyze
+- Added `get-context` to all tool lists, help text, server info, README, and test-mcp skill
+- Updated help guide with recommended flow using `get-context`
+- Still 9 pattern files (all Blazor), expansion planned in this phase
+
+### Added (Phase 1: Memory Core - Persistent Memory Engine)
+- **New `src/memory/mod.rs`** module
+  - `MemoryStore` (in-memory + JSON-backed, modeled after TrainingManager for consistency)
+  - Indexes by scope + category for fast lookup
+  - Secure persistence to `data/memories/memories.json` (single file for v1; hybrid JSON-first per roadmap decisions)
+  - `remember()`, `recall()` (scored search), `get_relevant_for_project()`, `mark_recalled()`
+- **New core types** (types.rs)
+  - `MemoryScope` enum: `Global` | `Project { path }` (canonical paths for stable scoping)
+  - `Memory` struct: id (UUID), scope, category, title, content, tags, importance, recall_count, timestamps
+  - `RememberInput`, `MemorySearchCriteria`
+- **3 new MCP tools** (mcp/mod.rs) — now **11 tools total**
+  - `remember`: Store decisions, conventions, gotchas, architecture notes, preferences (global or per-project)
+  - `recall`: Advanced search across memories (query, scope, category, tags, min_score, max_results) with relevance scoring
+  - `get-memory`: High-level retrieval of most relevant memories (global + project) for a task/project; supports `task` hint for ranking
+- **Deep integration in `analyze-project`**
+  - Automatically surfaces relevant memories (global + matching project) as `## Relevant Persistent Memories` section
+  - Bumps `recall_count` / `last_recalled_at` for surfaced items + persists stats
+  - Works with Endless Mode (full memories archived via obs_id; compact notes count)
+  - Canonical path normalization for reliable project scoping
+- **Server + Config updates**
+  - `memory_store` initialized in `Server::new()` (loaded at startup like patterns)
+  - `StorageConfig.memories_dir` (default `memories`, respects `MCP_*` env + config)
+  - `tool_remember` (mut), `tool_recall`, `tool_get_memory` with full Endless Mode + obs archiving support
+  - Updated `tools/list`, `initialize` capabilities, and `get-help` documentation
+- **Roadmap alignment**
+  - Decisions captured: JSON-first storage, global+per-project scope, structured facts only (no transcripts in v1), Go-sibling API parity in mind (UUID ids, tool names)
+  - Follows "Memory is the product" + leverage existing (ObservationStore patterns, TrainingManager style, security hygiene)
+  - Unit tests in `memory::tests` (roundtrip, project scope, relevance)
+- **Exports + wiring**
+  - `pub mod memory;` + re-exports in lib.rs (`MemoryStore`, `Memory`, `MemoryScope`, `RememberInput`)
+  - `mod memory;` added to main.rs for binary target
+  - All quality gates: `cargo fmt`, `cargo clippy -D warnings`, `cargo test` (memory tests + full suite green)
 
 ### Added (Endless Mode - ~95% Token Reduction)
 - **`set-endless-mode` tool** (mcp/mod.rs)

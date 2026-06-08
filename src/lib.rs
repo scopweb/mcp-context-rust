@@ -74,6 +74,7 @@ pub mod config;
 pub mod context;
 pub mod error;
 pub mod mcp;
+pub mod memory;
 pub mod observations;
 pub mod rustscp;
 pub mod training;
@@ -83,5 +84,8 @@ pub mod utils;
 pub use config::Config;
 pub use error::{AnalysisError, ConfigError, McpError, TrainingError};
 pub use mcp::Server;
+pub use memory::MemoryStore;
 pub use training::TrainingManager;
-pub use types::{AnalysisResult, CodePattern, Project, ProjectType};
+pub use types::{
+    AnalysisResult, CodePattern, Memory, MemoryScope, Project, ProjectType, RememberInput,
+};

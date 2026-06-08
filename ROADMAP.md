@@ -1,242 +1,203 @@
-# 🛣️ Roadmap - From PoC to Production-Ready Tool
+# 🛣️ MCP Context Rust — Active Roadmap (2026+)
 
-## 📊 Current State (v0.2.0)
-
-**Status:** ✅ **Phase 0 Complete** - Ready for Phase 1 development
-
-### What Works
-- ✅ Basic MCP protocol structure with Content-Length framing
-- ✅ 27+ code patterns for multiple frameworks
-- ✅ Pattern storage and retrieval (with security validation)
-- ✅ Tree-sitter C# parsing infrastructure
-- ✅ Multi-language project detection (7 languages)
-- ✅ Custom error types with thiserror
-- ✅ Structured logging with tracing
-- ✅ Clippy pedantic lints enabled
-- ✅ UTF-8 safe string handling
-- ✅ 42 tests passing
-
-### What Was Fixed (Phase 0)
-- ✅ **Security:** Path traversal vulnerability fixed with `sanitize_framework_name()`
-- ✅ **MCP Protocol:** Content-Length framing implemented
-- ✅ **Functionality:** Project analyzer returns file list correctly
-- ✅ **Tests:** All 42 tests compile and pass
+> **Project:** High-performance context & memory engine for AI coding assistants (MCP server)  
+> **Language:** Rust  
+> **Current Status:** Functional with strong foundations (analysis + pattern training + Endless Mode)  
+> **Strategic Goal:** Become the best **persistent memory + intelligent context** MCP server in the ecosystem.
 
 ---
 
-## 🚨 Phase 0: Critical Fixes (URGENT)
+## 📍 Current Reality (Honest Assessment)
 
-> **These issues must be fixed before any other development.**
-> **Estimated time: 1 day**
+The project already has excellent technical foundations:
 
-### 0.1 Security: Path Traversal Vulnerability
+**Strengths**
+- Solid multi-language project analysis (7 languages)
+- Mature, secure **TrainingManager** with scoring and indexes
+- Very powerful **Endless Mode** + `ObservationStore` (95% token reduction)
+- `.rustscp` persistent project context caching + CLI `read-context`
+- Clean 8-tool MCP interface
+- High code quality (Clippy pedantic, ~42 tests, good security hygiene)
 
-**File:** `src/training/mod.rs` (lines 103-108)
+**Critical Gaps** (vs what the official site promises and what users actually need)
+- **No real conversation / persistent memory** — Claude forgets everything between sessions
+- **No documentation intelligence** — cannot fetch or cache dependency docs
+- Pattern catalog is heavily skewed (~84 of 88+ patterns are Blazor-only)
+- No unified high-level context tool (`get-context`)
+- Analysis is not incremental/cached
 
-**Problem:** `save_patterns()` uses unsanitized `framework` parameter to construct file paths:
-```rust
-let filename = format!("{}-patterns.json", framework);
-let file_path = self.storage_path.join(filename);
-```
-
-An attacker can use `train-pattern` with `framework: "..\\..\\..\\Users\\username\\.ssh\\authorized_keys"` to overwrite arbitrary files.
-
-**Fix Required:**
-- [ ] Validate framework name (alphanumeric, hyphens, underscores only)
-- [ ] Reject path separators (`/`, `\`, `..`)
-- [ ] Canonicalize paths and verify they're within storage_path
-- [ ] Add unit tests for path traversal attempts
-
-**Severity:** ❗️ CRITICAL (RCE possible on Windows)
+**Bottom line:** Today it is a very good *pattern + analysis* server. It is not yet a true **"memory engine"**.
 
 ---
 
-### 0.2 MCP Protocol: Implement Content-Length Framing
+## 🎯 Prioritized 5-Phase Roadmap
 
-**File:** `src/mcp/mod.rs` (lines 65-76)
+### Phase 1: Memory Core (Highest Priority)
 
-**Problem:** Server reads stdin line-by-line expecting raw JSON:
-```rust
-let mut reader = tokio::io::BufReader::new(stdin).lines();
-match reader.next_line().await { ... }
-```
+**Goal:** Give the server **real persistent memory** so it finally becomes a "memory engine".
 
-MCP protocol requires `Content-Length` header framing:
-```
-Content-Length: 123\r\n
-\r\n
-{"jsonrpc":"2.0",...}
-```
+**Key Deliverables**
+- New `src/memory/` module
+- Persistent storage for:
+  - Project memories (decisions, conventions, gotchas, architecture notes)
+  - Conversation summaries / important facts
+  - User preferences per project
+- New MCP tools (or major extensions):
+  - `remember` (store important context)
+  - `recall` (search memory)
+  - `get-memory` (retrieve relevant memories for current task)
+- Deep integration:
+  - `analyze-project` automatically surfaces relevant memories
+  - `get-help` and pattern suggestions are memory-aware
+- Storage strategy: JSON files + indexes (initially) or SQLite (if complexity justifies it)
 
-Claude Desktop and other MCP clients send headers, causing parse errors.
+**Why first?**
+Without memory, patterns and analysis lose most of their long-term value (as documented in `HONEST_ASSESSMENT.md`).
 
-**Fix Required:**
-- [ ] Read headers until empty line (`\r\n\r\n`)
-- [ ] Parse `Content-Length` header
-- [ ] Read exactly N bytes for JSON body
-- [ ] Add integration test with proper framing
-
-**Severity:** ❗️ CRITICAL (Server unusable with standard MCP clients)
-
----
-
-### 0.3 Functionality: Complete ProjectAnalyzer
-
-**File:** `src/analyzer/project.rs` (lines 25-32)
-
-**Problem:** `analyze()` finds .cs files but discards them:
-```rust
-let _files = self.find_csharp_files(path)?;  // Result ignored!
-
-Ok(DotNetProject {
-    files: vec![],  // Always empty
-})
-```
-
-ContextBuilder receives empty project data, making analysis useless.
-
-**Fix Required:**
-- [ ] Use CSharpAnalyzer to parse each .cs file found
-- [ ] Populate `files` field with actual file analysis
-- [ ] Handle parse errors gracefully (log and continue)
-- [ ] Add test verifying files are included
-
-**Severity:** ⚠️ HIGH (Core feature non-functional)
+**Estimated effort:** 3–5 weeks
 
 ---
 
-### 0.4 Tests: Fix Crate Name in Imports
+### Phase 2: Context Unification + Pattern Renaissance
 
-**File:** `tests/test_analyzer.rs` (line 2)
+**Goal:** Make the existing strengths (patterns + analysis) actually deliver massive value.
 
-**Problem:** Tests import wrong crate name:
-```rust
-use mcp_dotnet_context::analyzer::{...};  // Wrong!
-```
+**Key Deliverables**
+- New unified tool: `get-context` (the single most useful tool for users)
+  - Combines: current project analysis + relevant memories + best matching patterns + smart suggestions
+- Massive expansion of the built-in pattern catalog
+  - Strong baseline patterns for: Rust, Go, Python, Node/TypeScript, Laravel, Spring, ASP.NET
+  - Better auto-tagging and relevance scoring when training new patterns
+- Improvements to `TrainingManager` (project-specific patterns, better auto-extraction)
+- Update `ContextBuilder` to support the new unified context generation
 
-Crate is named `mcp-context-rust` in Cargo.toml. `cargo test` fails to compile.
+**Why this phase?**
+Once memory exists, the next biggest win is reducing friction ("one tool call instead of four").
 
-**Fix Required:**
-- [ ] Change import to `mcp_context_rust`
-- [ ] Verify all test files use correct name
-- [ ] Run `cargo test` to confirm tests pass
-
-**Severity:** ⚠️ MEDIUM (CI/CD broken)
-
----
-
-## ✅ Phase 0 Checklist
-
-| Task | Status | PR |
-|------|--------|-----|
-| 0.1 Path Traversal Fix | ✅ DONE | - |
-| 0.2 MCP Framing | ✅ DONE | - |
-| 0.3 ProjectAnalyzer Fix | ✅ DONE | - |
-| 0.4 Test Imports Fix | ✅ DONE | - |
-| Integration Test | ✅ DONE (10 tests pass) | - |
-| Claude Desktop Verification | ⬜ TODO | - |
+**Estimated effort:** 3–4 weeks
 
 ---
 
-## 🎯 Phase 1: Making it Actually Useful
+### Phase 3: Documentation Intelligence
 
-> **Only start after Phase 0 is complete.**
+**Goal:** Close the "fetch dependency docs" promise from the official positioning.
 
-### 1.1 Corporate Knowledge Base Integration
+**Key Deliverables**
+- New `fetch-docs` tool (and integration into `get-context`)
+- Local documentation cache (`cache/docs/`)
+- Hybrid fetching:
+  - Local first (previously fetched docs)
+  - Fallback to docs.rs / crates.io / PyPI / npm / NuGet / etc.
+  - Optional Context7 or similar external service
+- Smart summarization of dependency documentation relevant to the current project
 
-**Problem:** Generic patterns from Microsoft Docs aren't unique value
-
-**Solution:** Connect to YOUR company's knowledge (Confluence/SharePoint/Wiki)
-
-**Impact:** 🚀 HIGH - Claude gets access to knowledge it doesn't have
-
----
-
-### 1.2 Production Monitoring Integration
-
-**Problem:** No visibility into how code behaves in production
-
-**Solution:** Connect to App Insights/Datadog/Splunk
-
-**Impact:** 🚀 CRITICAL - Claude knows what's actually broken
+**Estimated effort:** 4–6 weeks
 
 ---
 
-### 1.3 Code Quality Integration
+### Phase 4: Advanced Context Engine
 
-**Problem:** Tree-sitter analysis is basic compared to real tools
+**Goal:** Make the system feel magical and production-grade.
 
-**Solution:** Integrate SonarQube/Roslyn analyzers
+**Key Deliverables**
+- Incremental / differential project analysis (fingerprinting + cache invalidation)
+- Significantly richer `.rustscp` format and CLI experience
+- Full-featured CLI (`mcp-context-rust analyze`, `memory`, `patterns`, `recall`, etc.)
+- Better monorepo / workspace support
+- Optional multi-transport (HTTP + SSE) in addition to stdio
+- Usage metrics and self-observation of the server
 
-**Impact:** 🚀 HIGH - Real actionable insights
-
----
-
-### 1.4 Issue Tracking Integration
-
-**Problem:** No connection to your team's work
-
-**Solution:** Integrate with Jira/Azure DevOps/GitHub Issues
-
-**Impact:** 🚀 HIGH - Claude sees YOUR backlog
+**Estimated effort:** 3–4 weeks
 
 ---
 
-## 🎯 Priority Ranking
+### Phase 5: Ecosystem & Hardening (Optional / Demand-driven)
 
-| Feature | Impact | Complexity | Priority |
-|---------|--------|------------|----------|
-| **Path Traversal Fix** | 🔥 Security | Low | **P0** |
-| **MCP Framing Fix** | 🔥 Breaking | Medium | **P0** |
-| **ProjectAnalyzer Fix** | 🔥 Core | Low | **P0** |
-| **Test Imports Fix** | 🔥 CI/CD | Trivial | **P0** |
-| Corporate KB | High | Medium | P1 |
-| Production Monitoring | High | Medium | P1 |
-| SonarQube Integration | Medium | Low | P2 |
-| Jira/ADO Integration | Medium | Medium | P2 |
+- Team/shared memory (multiple developers using the same memory store)
+- Deeper integrations (GitHub Issues, Linear, Jira, App Insights, etc.)
+- Public distribution improvements (easier install, prebuilt binaries)
+- Plugin/extension system for custom memory sources or doc fetchers
 
 ---
 
-## 📈 Expected Impact
+## 📊 Priority Matrix
 
-### Current State (v0.2.0) ✅
-```
-Usable: ✅ Yes
-Security: ✅ Fixed (path traversal, input validation)
-MCP Compatible: ✅ Yes (Content-Length framing)
-Production Ready: ✅ Basic functionality ready
-Code Quality: ✅ Clippy pedantic, 42 tests passing
-Logging: ✅ Structured tracing
-```
-
-### After Phase 1 (v1.0.0)
-```
-Time Saved: ✅ 2-4 hours/week per developer
-Unique Value: ⭐⭐⭐⭐⭐ (corporate data access)
-Production Ready: ✅ Yes
-```
+| Phase | Strategic Value | User Impact | Technical Risk | Recommended Order |
+|-------|------------------|-------------|----------------|-------------------|
+| **1. Memory Core** | ★★★★★ | ★★★★★ | Low-Medium | **P0** |
+| **2. Context Unification + Patterns** | ★★★★☆ | ★★★★★ | Low | **P1** |
+| **3. Documentation Intelligence** | ★★★★ | ★★★★ | Medium | P2 |
+| **4. Advanced Context Engine** | ★★★★ | ★★★★ | Medium | P3 |
+| **5. Ecosystem** | ★★★ | ★★★ | Higher | P4 |
 
 ---
 
-## 🎓 Lessons Learned
+## 🧠 Core Design Principles (for all future work)
 
-1. ✅ MCP protocol works great (when implemented correctly)
-2. ✅ Rust + tree-sitter is solid architecture
-3. ❌ Need proper input validation from day one
-4. ❌ Must test with real MCP clients during development
-5. ❌ Don't skip implementing features (empty files array)
-6. ✅ Real value = access to private/corporate data
-
-### Key Insight
-> **The MCP isn't useful for what Claude already knows.
-> It's useful for what Claude CAN'T know without it.**
+1. **Memory is the product** — Everything else exists to feed better memory and better retrieval.
+2. **Leverage what already exists** — TrainingManager, ObservationStore, ContextBuilder, and .rustscp are excellent foundations. Extend them instead of replacing.
+3. **One great tool beats four good ones** — Prioritize `get-context` and memory-aware flows.
+4. **Private data > Public patterns** — The highest value always comes from what *this specific user/project* knows that Claude doesn't.
+5. **Endless Mode is a superpower** — Never break the ability to do 20–50× more tool calls.
 
 ---
 
-**Current Status:** 🟢 Phase 0 Complete
-**Next Milestone:** v1.0.0 (Phase 1 - Corporate integrations)
-**Target Status:** 🚀 Production-Ready
+## ❓ Open Questions (to be answered before/during Phase 1)
+
+1. **Storage for Memory**
+   - Start with simple JSON + indexes (consistent with current patterns approach)?
+   - Or introduce SQLite (`rusqlite`) from the beginning for better querying?
+
+2. **Scope of Memory**
+   - Per-project only (recommended for v1)?
+   - Global + per-project?
+   - Should we also persist full conversation transcripts or just structured facts/decisions?
+
+3. **Documentation Fetching Priority**
+   - Is a lightweight local cache + basic fetcher enough for Phase 3, or do we need Context7-level quality immediately?
+
+4. **Go Sibling Alignment**
+   - Do we want to keep `mcp-go-context` in sync with this roadmap (API compatibility for `remember`/`recall`/`get-context`, etc.)?
 
 ---
 
-*This roadmap was updated after production polishing on 2026-02-12.*
+## 🚀 How to Resume This Work Later
+
+When you come back to continue:
+
+1. Read this file (`ROADMAP.md`)
+2. Read `HONEST_ASSESSMENT.md` (still very relevant)
+3. Read `docs/CLAUDE.md` (architecture overview)
+4. Start with **Phase 1** unless a specific business reason pushes something else higher.
+5. Before coding Phase 1, re-answer the "Open Questions" section above.
+
+---
+
+## 📚 Related Documents
+
+- [HONEST_ASSESSMENT.md](HONEST_ASSESSMENT.md) — Brutally honest evaluation of current value
+- [docs/CLAUDE.md](docs/CLAUDE.md) — Development guide and architecture
+- [docs/OLD_ROADMAP.md](docs/OLD_ROADMAP.md) — Previous roadmap (archived)
+- [docs/PATTERNS_CATALOG.md](docs/PATTERNS_CATALOG.md) — Current pattern inventory
+
+---
+
+**Last Updated:** 2026 (after deep codebase analysis)  
+**Maintained by:** Grok + Project Owner
+
+**Current Phase:** Phase 2 in progress — `get-context` unified tool implemented (analysis + task-aware memories + patterns + suggestions). Pattern catalog expansion and TrainingManager/ContextBuilder improvements next. See CHANGELOG for details.
+
+## ✅ Phase 1 Decisions (answered during implementation kickoff)
+
+- **Storage:** Hybrid — start with JSON files + indexes (single `data/memories/memories.json`). SQLite (`rusqlite`) deferred until query needs justify it.
+- **Scope:** Global + per-project from day one. Project memories use canonical path for stable identity.
+- **Content v1:** Structured facts/decisions only (category, title, content, tags, importance). No full transcripts.
+- **Go sibling:** Tool names (`remember`/`recall`/`get-memory`) + core record shape designed with cross-impl compatibility in mind. IDs are UUIDs.
+
+See `src/memory/mod.rs`, `src/types.rs` (Memory*, RememberInput, MemorySearchCriteria), and MCP tool additions for the concrete design.
+
+**Implementation notes:**
+- New `MemoryStore` (modeled after TrainingManager for consistency + security patterns).
+- 3 new MCP tools + deep integration: `analyze-project` now auto-surfaces relevant memories (global + project) and bumps recall stats.
+- Memories persisted alongside patterns/observations under the configured `base_path`.
+- Full test coverage for the store; all existing tests continue to pass.
