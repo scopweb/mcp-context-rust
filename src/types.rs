@@ -293,6 +293,137 @@ pub struct CodePattern {
 }
 
 // ============================================================================
+// Memory Types (Phase 1 - Persistent Memory Core)
+// ============================================================================
+
+/// Scope of a memory: either global (user-wide) or tied to a specific project.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum MemoryScope {
+    /// Applies across all projects (user preferences, general conventions, etc.)
+    Global,
+    /// Specific to one project, identified by its canonical root directory path.
+    Project {
+        /// Canonical absolute path to the project root.
+        path: String,
+    },
+}
+
+impl MemoryScope {
+    /// Returns true if this memory is global.
+    #[must_use]
+    #[allow(dead_code)]
+    pub const fn is_global(&self) -> bool {
+        matches!(self, Self::Global)
+    }
+
+    /// Returns the project path if this is a project-scoped memory.
+    #[must_use]
+    #[allow(dead_code)]
+    pub fn project_path(&self) -> Option<&str> {
+        match self {
+            Self::Global => None,
+            Self::Project { path } => Some(path),
+        }
+    }
+
+    /// Create a project scope from a path string (caller should canonicalize when possible).
+    #[must_use]
+    pub fn for_project(path: impl Into<String>) -> Self {
+        Self::Project { path: path.into() }
+    }
+}
+
+impl fmt::Display for MemoryScope {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Global => write!(f, "global"),
+            Self::Project { path } => write!(f, "project:{}", path),
+        }
+    }
+}
+
+/// A single persistent memory entry.
+///
+/// Memories capture project-specific or global knowledge that should survive
+/// across AI sessions: architectural decisions, chosen conventions, discovered
+/// gotchas, user preferences, important facts, etc.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Memory {
+    /// Unique identifier (UUID recommended for safety and Go-sibling compatibility).
+    pub id: String,
+    /// Global or per-project scope.
+    pub scope: MemoryScope,
+    /// High-level category (e.g. "decision", "convention", "gotcha", "architecture",
+    /// "preference", "fact", "security", "performance").
+    pub category: String,
+    /// Short human-readable title.
+    pub title: String,
+    /// The actual content to remember (supports markdown, code blocks, etc.).
+    pub content: String,
+    /// Free-form tags for search and organization.
+    pub tags: Vec<String>,
+    /// Importance hint (0.0 low .. 1.0 critical). Influences recall ranking.
+    pub importance: f32,
+    /// How many times this memory has been explicitly recalled/surfaced.
+    pub recall_count: usize,
+    /// When the memory was first created.
+    pub created_at: DateTime<Utc>,
+    /// When the memory was last modified.
+    pub updated_at: DateTime<Utc>,
+    /// When this memory was last surfaced/recalled (if ever).
+    pub last_recalled_at: Option<DateTime<Utc>>,
+}
+
+impl Memory {
+    /// Returns a short summary line useful for compact listings.
+    #[must_use]
+    #[allow(dead_code)]
+    pub fn summary(&self) -> String {
+        let scope_str = match &self.scope {
+            MemoryScope::Global => "G".to_string(),
+            MemoryScope::Project { .. } => "P".to_string(),
+        };
+        format!(
+            "[{}] {} :: {} (imp:{:.1} rec:{})",
+            scope_str, self.category, self.title, self.importance, self.recall_count
+        )
+    }
+}
+
+/// Input for creating a new memory via the `remember` tool.
+/// Auto-fields (id, timestamps, counts) are filled by the store.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RememberInput {
+    pub scope: MemoryScope,
+    pub category: String,
+    pub title: String,
+    pub content: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default = "default_importance")]
+    pub importance: f32,
+}
+
+fn default_importance() -> f32 {
+    0.7
+}
+
+/// Search criteria for memory recall.
+#[derive(Debug, Clone, Default)]
+pub struct MemorySearchCriteria {
+    pub query: Option<String>,
+    pub scope: Option<MemoryScope>,
+    pub category: Option<String>,
+    pub tags: Vec<String>,
+    pub min_score: f32,
+    pub max_results: Option<usize>,
+    /// If true, only return memories for the exact project or global (no cross-project leakage).
+    #[allow(dead_code)]
+    pub strict_project: bool,
+}
+
+// ============================================================================
 // Analysis Result Types
 // ============================================================================
 

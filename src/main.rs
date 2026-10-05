@@ -5,6 +5,7 @@ mod analyzer;
 mod config;
 mod context;
 mod mcp;
+mod memory;
 mod observations;
 mod rustscp;
 mod training;
